@@ -18,7 +18,7 @@ from bot import Bot
 from backtest import fetch_candles, run_backtest, run_sweep
 from exchanges import exchange_class, ExchangeError
 
-VERSION = "1.4"
+VERSION = "1.5"
 BASE = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, static_folder=os.path.join(BASE, "static"))
 bot = Bot()
@@ -158,9 +158,16 @@ def resume_coin():
 
 @app.post("/api/test-keys")
 def test_keys():
-    """API 키로 잔고 조회가 되는지 확인 (주문은 하지 않음)"""
+    """API 키로 잔고 조회가 되는지 확인 (주문은 하지 않음). 화면에 입력한 값이 있으면 저장 전이라도 그 값으로 확인"""
     c = bot.cfg
-    ex = exchange_class(c["exchange"])(c["access_key"], c["secret_key"])
+    body = request.get_json(silent=True) or {}
+
+    def pick(k):
+        v = (body.get(k) or "").strip()
+        return c[k] if (not v or "•" in v) else v
+
+    exch = body.get("exchange") or c["exchange"]
+    ex = exchange_class(exch)(pick("access_key"), pick("secret_key"))
     try:
         b = ex.balances()
         return jsonify({"ok": True, "krw": b.get("KRW", 0),

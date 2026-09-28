@@ -324,9 +324,10 @@ $('#btnSave').onclick = async () => {
   else $('#cfgErr').scrollIntoView({behavior: 'smooth', block: 'center'});
 };
 $('#btnTest').onclick = async () => {
-  $('#testRes').textContent = '확인 중… (먼저 저장된 키로 조회합니다)';
-  const r = await api('/api/test-keys', {});
-  $('#testRes').textContent = r.ok ? `성공 — 원화 ${won(r.krw)}, ` + Object.entries(r.coins).map(([k, v]) => `${k} ${v}`).join(', ') : '실패: ' + r.errors.join(' ');
+  $('#testRes').textContent = '확인 중…';
+  const r = await api('/api/test-keys', {exchange: $('#g_exchange').value, access_key: $('#g_access_key').value, secret_key: $('#g_secret_key').value});
+  $('#testRes').textContent = r.ok ? `성공 — 원화 ${won(r.krw)}, ` + Object.entries(r.coins).map(([k, v]) => `${k} ${v}`).join(', ') : '실패: ' + r.errors.join(' ') + ' — 키 오타, 권한(잔고 조회), 허용 IP를 확인하세요.';
+  if (r.ok) $('#testRes').textContent += '  ※ 확인만 한 것이니 꼭 [설정 저장]을 누르세요.';
 };
 
 // ---------------- 실행 ----------------
