@@ -16,7 +16,7 @@ from werkzeug.security import check_password_hash
 
 from bot import Bot
 from backtest import fetch_candles, run_backtest, run_sweep
-from exchanges import Upbit, Bithumb, ExchangeError
+from exchanges import exchange_class, ExchangeError
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, static_folder=os.path.join(BASE, "static"))
@@ -152,7 +152,7 @@ def resume_coin():
 def test_keys():
     """API 키로 잔고 조회가 되는지 확인 (주문은 하지 않음)"""
     c = bot.cfg
-    ex = (Bithumb if c["exchange"] == "bithumb" else Upbit)(c["access_key"], c["secret_key"])
+    ex = exchange_class(c["exchange"])(c["access_key"], c["secret_key"])
     try:
         b = ex.balances()
         return jsonify({"ok": True, "krw": b.get("KRW", 0),
@@ -176,7 +176,7 @@ def backtest():
     def job():
         bt_state.update(running=True, progress="시세 수집 중…", result=None, error="")
         try:
-            ex = Bithumb() if cfg["exchange"] == "bithumb" else Upbit()
+            ex = exchange_class(cfg["exchange"])()
             cs = fetch_candles(ex, f"KRW-{coin}", days,
                                progress=lambda n: bt_state.update(progress=f"시세 {n:,}개 수집"))
             if not cs:

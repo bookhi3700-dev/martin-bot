@@ -120,14 +120,14 @@ tr.mine td{font-weight:650}
   <section id="tab-settings" class="hidden">
     <fieldset><legend>거래소·공통</legend>
       <div class="row"><label>실행 모드</label><select id="g_mode"><option value="paper">모의투자 (실제 주문 안 함)</option><option value="live">실전 (실제 주문)</option></select></div>
-      <div class="row"><label>거래소</label><select id="g_exchange"><option value="upbit">업비트</option><option value="bithumb">빗썸</option></select></div>
+      <div class="row"><label>거래소</label><select id="g_exchange"><option value="upbit">업비트</option><option value="bithumb">빗썸</option><option value="coinone">코인원</option></select></div>
       <div class="row"><label>Access Key</label><input id="g_access_key" autocomplete="off" placeholder="실전 모드에서만 필요"></div>
       <div class="row"><label>Secret Key</label><input id="g_secret_key" type="password" autocomplete="off"></div>
       <div class="row"><span></span><div><button type="button" id="btnTest">API 키 확인 (잔고 조회)</button> <span id="testRes" class="hint"></span></div></div>
       <div class="row"><span></span><div class="hint">키 발급 시 <b>출금 권한은 반드시 끄세요.</b> 조회·주문 권한만 필요합니다. 실행하는 PC/서버의 IP를 허용 IP로 등록해야 합니다.</div></div>
       <div class="row"><label>전체 투입 한도 (원)</label><input id="g_total_budget" type="number" min="0" step="10000"><div class="hint" id="budgetHint"></div></div>
       <div class="row"><label>시세 확인 주기 (초)</label><input id="g_check_interval_sec" type="number" min="3" step="1"></div>
-      <div class="row"><label>수수료 (%)</label><input id="g_fee_pct" type="number" min="0" step="0.01"><div class="hint">모의투자·백테스트 계산용 (업비트 0.05%)</div></div>
+      <div class="row"><label>수수료 (%)</label><input id="g_fee_pct" type="number" min="0" step="0.01"><div class="hint">모의투자·백테스트 계산용 (업비트 0.05% · 빗썸·코인원은 등급/이벤트에 따라 다르니 거래소 앱에서 확인)</div></div>
       <div class="row"><label>슬리피지 (%)</label><input id="g_slippage_pct" type="number" min="0" step="0.05"><div class="hint">백테스트용 — 시장가 주문이 원하는 가격보다 불리하게 체결되는 정도</div></div>
       <div class="row"><label>텔레그램 봇 토큰</label><input id="g_telegram_token" autocomplete="off" placeholder="선택 — 매수/매도/오류 알림"></div>
       <div class="row"><label>텔레그램 chat_id</label><input id="g_telegram_chat_id" autocomplete="off"></div>
@@ -194,6 +194,7 @@ const num = v => { if (v == null) return '-'; const a = Math.abs(v), d = a >= 10
 const signed = v => v == null ? '-' : (v > 0 ? '+' : '') + Math.round(v).toLocaleString('ko-KR') + '원';
 const pct = (v, d = 2) => v == null ? '-' : (v > 0 ? '+' : '') + v.toFixed(d) + '%';
 const cls = v => v > 0 ? 'pos' : v < 0 ? 'neg' : '';
+const EXN = {upbit: '업비트', bithumb: '빗썸', coinone: '코인원'};
 async function api(path, body) {
   const r = await fetch(path, body === undefined ? {} : {method: 'POST', headers: {'Content-Type': 'application/json', 'X-Martin': '1'}, body: JSON.stringify(body)});
   if (r.status === 401) { location.href = '/login'; throw new Error('login'); }
@@ -310,7 +311,7 @@ $('#btnTest').onclick = async () => {
 // ---------------- 실행 ----------------
 $('#btnStart').onclick = async () => {
   const on = cfg.coins.filter(c => c.enabled).map(c => c.coin).join(', ');
-  if (cfg.mode === 'live' && !confirm(`실전 모드로 ${cfg.exchange === 'bithumb' ? '빗썸' : '업비트'} [${on}] 자동매매를 시작합니다. 계속할까요?`)) return;
+  if (cfg.mode === 'live' && !confirm(`실전 모드로 ${EXN[cfg.exchange]} [${on}] 자동매매를 시작합니다. 계속할까요?`)) return;
   const r = await api('/api/start', {}); showErr($('#globalErr'), r.errors); refresh();
 };
 $('#btnStop').onclick = async () => { await api('/api/stop', {}); refresh(); };
@@ -361,7 +362,7 @@ async function refresh() {
   $('#btnLogout').classList.toggle('hidden', !s.auth);
   $('#runPill').textContent = s.running ? '실행 중' : '정지'; $('#runPill').className = 'pill' + (s.running ? ' on' : '');
   $('#modePill').textContent = s.mode === 'live' ? '실전' : '모의투자'; $('#modePill').className = 'pill' + (s.mode === 'live' ? ' live' : '');
-  $('#exPill').textContent = s.exchange === 'bithumb' ? '빗썸' : '업비트';
+  $('#exPill').textContent = EXN[s.exchange] || s.exchange;
   $('#btnStart').disabled = s.running; $('#btnStop').disabled = !s.running;
   const budgetTxt = t.budget > 0 ? `한도 ${won(t.budget)} 중 ${(t.cost / t.budget * 100).toFixed(0)}%` : '한도 없음';
   $('#totals').innerHTML = [

@@ -210,7 +210,7 @@ def run_sweep(candles, cfg, grid, limit=300):
 if __name__ == "__main__":
     import argparse
     from bot import load_config
-    from exchanges import Upbit, Bithumb
+    from exchanges import exchange_class
 
     ap = argparse.ArgumentParser(description="마틴 전략 백테스트")
     ap.add_argument("--coin", default=None)
@@ -220,7 +220,7 @@ if __name__ == "__main__":
     coin = args.coin or g["coins"][0]["coin"]
     cc = next((c for c in g["coins"] if c["coin"] == coin), g["coins"][0])
     cfg = {**g, **cc, "coin": coin}
-    ex = Bithumb() if g["exchange"] == "bithumb" else Upbit()
+    ex = exchange_class(g["exchange"])()
     cs = fetch_candles(ex, f"KRW-{coin}", args.days, progress=lambda n: print(f"\r캔들 {n}개 수집", end=""))
     print()
     r = run_backtest(cs, cfg, detail=False)
