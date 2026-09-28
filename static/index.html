@@ -94,6 +94,7 @@ tr.mine td{font-weight:650}
   <span id="runPill" class="pill">정지</span>
   <span id="modePill" class="pill">모의투자</span>
   <span id="exPill" class="pill"></span>
+  <span id="ver" class="hint"></span>
   <span class="spacer"></span>
   <button id="btnStart" class="primary">시작</button>
   <button id="btnStop" class="danger">중지</button>
@@ -363,6 +364,7 @@ async function refresh() {
   $('#runPill').textContent = s.running ? '실행 중' : '정지'; $('#runPill').className = 'pill' + (s.running ? ' on' : '');
   $('#modePill').textContent = s.mode === 'live' ? '실전' : '모의투자'; $('#modePill').className = 'pill' + (s.mode === 'live' ? ' live' : '');
   $('#exPill').textContent = EXN[s.exchange] || s.exchange;
+  $('#ver').textContent = s.version ? 'v' + s.version : '';
   $('#btnStart').disabled = s.running; $('#btnStop').disabled = !s.running;
   const budgetTxt = t.budget > 0 ? `한도 ${won(t.budget)} 중 ${(t.cost / t.budget * 100).toFixed(0)}%` : '한도 없음';
   $('#totals').innerHTML = [

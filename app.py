@@ -18,6 +18,7 @@ from bot import Bot
 from backtest import fetch_candles, run_backtest, run_sweep
 from exchanges import exchange_class, ExchangeError
 
+VERSION = "1.3 (업비트·빗썸·코인원 / 여러 코인)"
 BASE = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, static_folder=os.path.join(BASE, "static"))
 bot = Bot()
@@ -103,6 +104,13 @@ def logout():
     return jsonify({"ok": True})
 
 
+@app.after_request
+def no_cache(resp):
+    # 업데이트 후 브라우저가 예전 화면을 보여주지 않도록
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 @app.get("/")
 def index():
     return send_from_directory(app.static_folder, "index.html")
@@ -110,7 +118,7 @@ def index():
 
 @app.get("/api/status")
 def status():
-    return jsonify({**bot.status(), "auth": bool(password_hash())})
+    return jsonify({**bot.status(), "auth": bool(password_hash()), "version": VERSION})
 
 
 @app.get("/api/config")
@@ -209,6 +217,6 @@ if __name__ == "__main__":
     port = int(os.environ.get("MARTIN_PORT", 8765))
     if not os.environ.get("MARTIN_NO_BROWSER"):
         threading.Timer(1.2, lambda: webbrowser.open(f"http://127.0.0.1:{port}")).start()
-    print(f"\n  마틴봇 대시보드: http://127.0.0.1:{port}\n  이 창을 닫으면 봇도 종료됩니다.\n")
+    print(f"\n  마틴봇 v{VERSION}\n  폴더: {BASE}\n  대시보드: http://127.0.0.1:{port}\n  이 창을 닫으면 봇도 종료됩니다.\n")
     bot.resume_if_needed()  # 서버 재부팅 등으로 꺼졌다 켜지면 이어서 실행
     app.run(host="127.0.0.1", port=port, debug=False, use_reloader=False, threaded=True)
