@@ -136,6 +136,7 @@ tr.mine td{font-weight:650}
       <div class="row"><span></span><div><button type="button" id="btnTest">API 키 확인 (잔고 조회)</button> <span id="testRes" class="hint"></span></div></div>
       <div class="row"><span></span><div class="hint">키 발급 시 <b>출금 권한은 반드시 끄세요.</b> 조회·주문 권한만 필요합니다. 실행하는 PC/서버의 IP를 허용 IP로 등록해야 합니다.</div></div>
       <div class="row"><label>전체 투입 한도 (원)</label><input id="g_total_budget" type="number" min="0" step="10000"><div class="hint" id="budgetHint"></div></div>
+      <div class="row"><label>전체 한도 도달 시</label><select id="g_total_limit_action"><option value="hold">추가 매수만 보류 (익절은 계속)</option><option value="stop_bot">봇 전체 중지 (보유 코인 유지)</option></select></div>
       <div class="row"><label>시세 확인 주기 (초)</label><input id="g_check_interval_sec" type="number" min="3" step="1"></div>
       <div class="row"><label>수수료 (%)</label><input id="g_fee_pct" type="number" min="0" step="0.01"><div class="hint">모의투자·백테스트 계산용 (업비트 0.05% · 빗썸·코인원은 등급/이벤트에 따라 다르니 거래소 앱에서 확인)</div></div>
       <div class="row"><label>슬리피지 (%)</label><input id="g_slippage_pct" type="number" min="0" step="0.05"><div class="hint">백테스트용 — 시장가 주문이 원하는 가격보다 불리하게 체결되는 정도</div></div>
@@ -234,6 +235,8 @@ const COIN_FIELDS = [
   ['trailing_enabled', '추적 익절', 'check', '목표 수익 도달 후 바로 팔지 않고, 고점을 따라가다 아래 폭만큼 빠지면 매도 (목표가 밑으로는 기다리지 않음)'],
   ['trailing_pct', '추적 익절 폭 (%)', 'number', '고점 대비 이만큼 빠지면 매도', 0.1],
   ['auto_restart', '자동 재시작', 'check', '익절 후 바로 1단계부터 새 사이클 시작'],
+  ['coin_budget', '코인 투입 한도 (원)', 'number', '0 = 제한 없음. 이 코인에 들어간 돈이 이 금액을 넘게 되는 추가 매수가 오면 아래 동작을 합니다', 10000],
+  ['limit_action', '코인 한도 도달 시', 'limit', ''],
   ['stop_loss_enabled', '손절 사용', 'check', '최대 단계까지 산 뒤에만 작동'],
   ['stop_loss_pct', '손절 기준 (%)', 'number', '평단가 대비 이만큼 떨어지면 전량 매도', 0.1],
 ];
@@ -251,6 +254,7 @@ function coinEditor(c, open) {
   const f = COIN_FIELDS.map(([k, label, type, hint, step]) => {
     let inp;
     if (type === 'check') inp = `<div><input type="checkbox" data-k="${k}" ${c[k] ? 'checked' : ''}> <span class="hint">${hint}</span></div>`;
+    else if (type === 'limit') inp = `<select data-k="${k}">${[['hold', '추가 매수만 중지 — 코인 보유, 익절가 오면 매도'], ['pause', '이 코인 매매 완전 중지 — 보유 유지, 재개 버튼으로 다시 시작'], ['sell', '전량 매도 후 중지 — 손실 확정']].map(([v, t]) => `<option value="${v}" ${c[k] === v ? 'selected' : ''}>${t}</option>`).join('')}</select>`;
     else if (type === 'basis') inp = `<select data-k="${k}"><option value="avg" ${c[k] === 'avg' ? 'selected' : ''}>평단가 기준</option><option value="last" ${c[k] === 'last' ? 'selected' : ''}>직전 매수가 기준</option></select>`;
     else inp = `<input data-k="${k}" type="${type}" ${step ? `step="${step}"` : ''} value="${esc(c[k])}">` + (hint ? `<div class="hint">${hint}</div>` : '');
     return `<div class="row"><label>${label}</label>${inp}</div>`;
@@ -283,7 +287,9 @@ function updateLadder(d) {
   const o = readCoin(d), rows = coinLadder(o);
   d.querySelector('[data-ladder] tbody').innerHTML = rows.map(r => `<tr><td>${r.step}단계</td><td>${r.drop == null ? '-' : r.drop + '%'}</td><td>${won(r.amount)}</td><td>${won(r.cum)}</td></tr>`).join('');
   const total = rows.length ? rows[rows.length - 1].cum : 0;
-  d.querySelector('[data-sum]').textContent = `${o.enabled ? '' : '(꺼짐) '}최대 ${won(total)} · 익절 ${o.take_profit_pct}%${o.trailing_enabled ? ' + 추적' : ''}`;
+  const cb = +o.coin_budget;
+  d.querySelector('[data-sum]').textContent = `${o.enabled ? '' : '(꺼짐) '}최대 ${won(total)} · 익절 ${o.take_profit_pct}%${o.trailing_enabled ? ' + 추적' : ''}${cb > 0 ? ` · 한도 ${won(cb)}` : ''}`;
+  d.querySelectorAll('[data-ladder] tbody tr').forEach((tr, i) => { if (cb > 0 && rows[i].cum > cb) { tr.style.opacity = .45; tr.title = '코인 한도를 넘어 실행되지 않는 단계'; } });
   updateBudgetHint();
 }
 function updateBudgetHint() {
@@ -297,7 +303,7 @@ $('#g_total_budget').addEventListener('input', updateBudgetHint);
 
 async function loadConfig() {
   cfg = await api('/api/config');
-  for (const k of ['mode', 'exchange', 'access_key', 'secret_key', 'total_budget', 'check_interval_sec', 'fee_pct', 'slippage_pct', 'telegram_token', 'telegram_chat_id'])
+  for (const k of ['mode', 'exchange', 'access_key', 'secret_key', 'total_budget', 'total_limit_action', 'check_interval_sec', 'fee_pct', 'slippage_pct', 'telegram_token', 'telegram_chat_id'])
     $('#g_' + k).value = cfg[k] ?? '';
   const box = $('#coinEditors'); box.innerHTML = '';
   cfg.coins.forEach((c, i) => box.appendChild(coinEditor(c, cfg.coins.length === 1)));
@@ -314,7 +320,7 @@ $('#btnAddCoin').onclick = () => {
 };
 $('#btnSave').onclick = async () => {
   const body = {};
-  for (const k of ['mode', 'exchange', 'access_key', 'secret_key', 'total_budget', 'check_interval_sec', 'fee_pct', 'slippage_pct', 'telegram_token', 'telegram_chat_id'])
+  for (const k of ['mode', 'exchange', 'access_key', 'secret_key', 'total_budget', 'total_limit_action', 'check_interval_sec', 'fee_pct', 'slippage_pct', 'telegram_token', 'telegram_chat_id'])
     body[k] = $('#g_' + k).value;
   body.coins = [...document.querySelectorAll('.coinedit')].map(readCoin);
   if (body.mode === 'live' && cfg.mode !== 'live' && !confirm('실전 모드는 실제 돈으로 주문합니다. 계속할까요?')) return;
@@ -359,7 +365,7 @@ function coinCard(c, running) {
   return `<div class="card">
     <div class="coinhead"><h3>${esc(c.coin)}</h3>${chip}<span class="spacer"></span><span class="hint">현재가</span><b>${num(price)}</b></div>
     ${c.paused ? `<div class="alert bad">⛔ ${esc(c.paused)}<br>거래소 앱에서 체결 여부를 확인하고, 봇 기록과 다르면 '기록 초기화' 후 재개하세요. <button class="small" data-resume="${c.coin}">재개</button></div>` : ''}
-    ${c.budget_blocked ? `<div class="alert warn">전체 투입 한도에 걸려 추가 매수를 보류 중입니다.</div>` : ''}
+    ${c.budget_blocked ? `<div class="alert warn">투입 한도에 걸려 추가 매수를 멈춘 상태입니다. 익절가에 오면 매도합니다.</div>` : ''}
     <div class="hint">진행 ${p.step} / ${c.max_steps}단계${p.step ? ` · ${esc(p.cycle_started_at)} 시작` : ''}</div>
     <div class="dots">${dots}</div>
     <div class="kv">
@@ -462,7 +468,7 @@ function renderSingle(r) {
     ['기간 끝 미청산', r.open_position ? signed(r.open_position.pnl) : '없음', r.open_position ? `${r.open_position.step}단계 · 투입 ${won(r.open_position.cost)}` : '', r.open_position ? r.open_position.pnl : 0],
     ['총 손익', signed(r.total_pnl), `최대 투입금 대비 ${pct(r.return_on_peak_pct)}`, r.total_pnl],
     ['그냥 보유했다면', pct(r.buy_hold_pct), `마틴이 ${vsHold >= 0 ? '앞섬' : '뒤처짐'} (${pct(vsHold)}p)`, r.buy_hold_pct],
-    ['최대 투입금', won(r.peak_capital), `최대 단계 도달 ${r.max_step_hits}회`],
+    ['최대 투입금', won(r.peak_capital), `최대 단계 도달 ${r.max_step_hits}회` + (r.limit_hits ? ` · 한도 도달 ${r.limit_hits}회${r.stopped_by_limit ? ' (중지됨)' : ''}` : '')],
     ['최악의 평가손실', signed(r.worst_unrealized), `최대 투입금 대비 ${r.worst_unrealized_pct}%`, r.worst_unrealized],
     ['사이클 기간', r.avg_cycle_days != null ? `평균 ${r.avg_cycle_days}일` : '-', r.longest_cycle_days != null ? `최장 ${r.longest_cycle_days}일` : ''],
   ];

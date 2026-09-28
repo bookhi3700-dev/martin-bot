@@ -67,6 +67,8 @@ def run_backtest(candles, cfg, detail=True):
     realized = 0.0
     peak_cost = worst_unrealized = 0.0
     max_step_hits = 0
+    limit_hits = 0
+    limit_flag = False   # 이번 사이클에 이미 한도에 걸렸는지
     stopped = False
 
     def buy(amount, price, when, reason):
@@ -90,6 +92,7 @@ def run_backtest(candles, cfg, detail=True):
         if stopped:
             break
         if pos.step == 0:
+            limit_flag = False
             buy(step_amount(cfg, 0), c["o"], when, "1단계")
 
         # 1) 익절
@@ -114,13 +117,27 @@ def run_backtest(candles, cfg, detail=True):
             continue
 
         # 2) 추가 매수 (한 캔들에서 여러 단계 가능)
+        cb, la = cfg.get("coin_budget", 0), cfg.get("limit_action", "hold")
         while not pos.trail_armed:
             trig = next_buy_trigger(pos, cfg)
             if trig is None or c["l"] > trig:
                 break
-            buy(step_amount(cfg, pos.step), min(c["o"], trig), when, f"{pos.step + 1}단계")
+            amt = step_amount(cfg, pos.step)
+            if cb > 0 and pos.cost + amt > cb:
+                if not limit_flag:
+                    limit_hits += 1
+                    limit_flag = True
+                if la == "pause":
+                    stopped = True
+                elif la == "sell":
+                    sell(min(c["o"], trig), when, "한도 도달 매도")
+                    stopped = True
+                break
+            buy(amt, min(c["o"], trig), when, f"{pos.step + 1}단계")
             if pos.step >= maxs:
                 max_step_hits += 1
+        if stopped:
+            continue
 
         # 3) 손절
         sl = stop_loss_price(pos, cfg)
@@ -159,6 +176,8 @@ def run_backtest(candles, cfg, detail=True):
         "worst_unrealized": round(worst_unrealized),
         "worst_unrealized_pct": round(worst_unrealized / peak_cost * 100, 1) if peak_cost else 0,
         "max_step_hits": max_step_hits,
+        "limit_hits": limit_hits,
+        "stopped_by_limit": stopped and limit_hits > 0,
         "avg_cycle_days": round(sum(durations) / len(durations), 1) if durations else None,
         "longest_cycle_days": round(max(durations), 1) if durations else None,
         "step_distribution": {str(s): sum(1 for r in cycles if r["steps"] == s) for s in range(1, maxs + 1)},
@@ -201,7 +220,7 @@ def run_sweep(candles, cfg, grid, limit=300):
                     "max_steps": c["max_steps"], "martin_multiplier": c["martin_multiplier"],
                     "trailing": c["trailing_pct"] if c["trailing_enabled"] else 0,
                     **{k: r[k] for k in ("cycles", "realized", "total_pnl", "peak_capital", "return_on_peak_pct",
-                                         "worst_unrealized", "worst_unrealized_pct", "max_step_hits", "open_position")}})
+                                         "worst_unrealized", "worst_unrealized_pct", "max_step_hits", "limit_hits", "open_position")}})
     out.sort(key=lambda r: r["total_pnl"], reverse=True)
     return {"period": f"{candles[0]['kst'][:10]} ~ {candles[-1]['kst'][:10]}",
             "buy_hold_pct": round((candles[-1]["c"] / candles[0]["o"] - 1) * 100, 2), "rows": out}

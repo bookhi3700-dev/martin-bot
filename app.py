@@ -18,7 +18,7 @@ from bot import Bot
 from backtest import fetch_candles, run_backtest, run_sweep
 from exchanges import exchange_class, ExchangeError, my_public_ip
 
-VERSION = "1.6"
+VERSION = "1.7"
 BASE = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, static_folder=os.path.join(BASE, "static"))
 bot = Bot()

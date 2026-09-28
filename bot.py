@@ -11,7 +11,7 @@ from datetime import datetime
 import requests
 
 from exchanges import make_exchange, ExchangeError, OrderUnconfirmed
-from strategy import (GLOBAL_DEFAULTS, COIN_DEFAULTS, Position, decide, apply_buy, close_position,
+from strategy import (GLOBAL_DEFAULTS, COIN_DEFAULTS, Position, Action, decide, apply_buy, close_position,
                       update_trailing, next_buy_trigger, take_profit_price, trailing_stop_price,
                       stop_loss_price, ladder, max_budget, step_amount, validate_coin, drop_for_step)
 
@@ -77,6 +77,8 @@ def validate_config(cfg):
         errs.append("시세 확인 주기는 3초 이상이어야 합니다.")
     if cfg["total_budget"] < 0:
         errs.append("전체 투입 한도는 0 이상이어야 합니다 (0 = 제한 없음).")
+    if cfg["total_limit_action"] not in ("hold", "stop_bot"):
+        errs.append("전체 한도 도달 시 동작 값이 올바르지 않습니다.")
     if cfg["mode"] == "live" and (not cfg["access_key"] or not cfg["secret_key"]):
         errs.append("실전 모드는 API Access Key / Secret Key 가 필요합니다.")
     names = [c["coin"] for c in cfg["coins"]]
@@ -327,13 +329,39 @@ class Bot:
                 return
             if act.kind == "buy" and slot.pos.step == 0 and not cfg["auto_restart"] and slot.stats["cycles"] > 0:
                 return
-            if act.kind == "buy" and self.cfg["total_budget"] > 0:
-                if self.total_cost() + act.amount_krw > self.cfg["total_budget"]:
+            stop_after = False
+            # ① 코인별 투입 한도
+            if act.kind == "buy" and cfg["coin_budget"] > 0 and slot.pos.cost + act.amount_krw > cfg["coin_budget"]:
+                la = cfg["limit_action"]
+                info = (f"{slot.coin} 코인 투입 한도 {cfg['coin_budget']:,}원 도달 "
+                        f"(현재 {slot.pos.cost:,.0f}원, 다음 매수 {act.amount_krw:,.0f}원)")
+                if la == "hold":
                     if not slot.budget_blocked:
                         slot.budget_blocked = True
-                        self.log(f"🚫 {slot.coin} {act.reason} 보류 — 전체 투입 한도 {self.cfg['total_budget']:,}원 초과 "
-                                 f"(현재 {self.total_cost():,.0f}원 + {act.amount_krw:,.0f}원)", notify=True)
+                        self.log(f"🚫 {info} — 추가 매수 중지, 익절가 도달을 기다립니다.", notify=True)
                     return
+                if la == "pause":
+                    slot.paused = f"{info} — 매매를 중지했습니다 (보유 코인은 그대로). 재개하면 다시 진행합니다."
+                    slot.save()
+                    self.log(f"⛔ {slot.paused}", notify=True)
+                    return
+                # sell: 전량 매도 후 중지
+                act = Action("sell", "투입 한도 도달 — 전량 매도 후 중지", volume=slot.pos.volume, trigger_price=price)
+                stop_after = True
+                self.log(f"🛑 {info} — 설정에 따라 전량 매도 후 이 코인을 중지합니다.", notify=True)
+            # ② 전체 투입 한도
+            if act.kind == "buy" and self.cfg["total_budget"] > 0 and self.total_cost() + act.amount_krw > self.cfg["total_budget"]:
+                info = (f"전체 투입 한도 {self.cfg['total_budget']:,}원 도달 "
+                        f"(현재 {self.total_cost():,.0f}원 + {slot.coin} {act.amount_krw:,.0f}원)")
+                if self.cfg["total_limit_action"] == "stop_bot":
+                    self.running = False
+                    self._set_run_flag(False)
+                    self.log(f"🛑 {info} — 설정에 따라 봇 전체를 중지했습니다. 보유 코인은 그대로입니다.", notify=True)
+                    return
+                if not slot.budget_blocked:
+                    slot.budget_blocked = True
+                    self.log(f"🚫 {slot.coin} {act.reason} 보류 — {info}", notify=True)
+                return
             slot.budget_blocked = False
 
         if act.kind == "buy":
@@ -358,6 +386,11 @@ class Bot:
                 slot.save()
             self.log(f"🔴 {slot.coin} {act.reason}: {res['steps']}단계 사이클 종료, 손익 {res['profit']:+,}원 "
                      f"({res['profit_pct']:+.2f}%)", notify=True)
+            if stop_after:
+                with self.lock:
+                    slot.paused = "투입 한도 도달로 전량 매도 후 중지했습니다. 재개하면 1단계부터 새로 시작합니다."
+                    slot.save()
+                return
             if not cfg["auto_restart"]:
                 self.log(f"{slot.coin} 자동 재시작이 꺼져 있어 새 사이클을 시작하지 않습니다.", notify=True)
 
@@ -397,6 +430,7 @@ class Bot:
                     "coin": c["coin"], "enabled": c["enabled"], "market": s.market, "price": price,
                     "paused": s.paused, "budget_blocked": s.budget_blocked,
                     "max_steps": c["max_steps"], "trailing_enabled": c["trailing_enabled"],
+                    "coin_budget": c["coin_budget"], "limit_action": c["limit_action"],
                     "position": {**p.to_dict(), "avg_price": p.avg_price, "value": value, "pnl": pnl,
                                  "next_buy_price": nb,
                                  "next_buy_amount": step_amount(cfg, p.step) if nb else None,
@@ -413,7 +447,7 @@ class Bot:
                 "total": {"cost": tot_cost, "pnl": tot_pnl,
                           "realized": sum(x["stats"]["realized"] for x in coins),
                           "cycles": sum(x["stats"]["cycles"] for x in coins),
-                          "budget": self.cfg["total_budget"],
+                          "budget": self.cfg["total_budget"], "limit_action": self.cfg["total_limit_action"],
                           "max_need": sum(x["max_budget"] for x in coins if x["enabled"])},
                 "coins": coins,
                 "logs": list(self.logs)[:150],

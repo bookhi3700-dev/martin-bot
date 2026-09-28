@@ -21,6 +21,7 @@ GLOBAL_DEFAULTS = {
     "access_key": "",
     "secret_key": "",
     "total_budget": 0,            # 전체 투입 한도(원) — 0 이면 제한 없음
+    "total_limit_action": "hold", # hold(추가 매수만 보류) | stop_bot(봇 전체 중지)
     "check_interval_sec": 10,
     "fee_pct": 0.05,              # 모의투자/백테스트 수수료(%)
     "slippage_pct": 0.1,          # 백테스트 슬리피지(%) — 시장가 주문이 불리하게 체결되는 정도
@@ -42,6 +43,8 @@ COIN_DEFAULTS = {
     "stop_loss_enabled": False,
     "stop_loss_pct": 15.0,
     "auto_restart": True,
+    "coin_budget": 0,             # 이 코인 투입 한도(원) — 0 이면 제한 없음
+    "limit_action": "hold",       # hold(추가 매수만 중지, 익절 대기) | pause(코인 매매 중지) | sell(전량 매도 후 중지)
 }
 
 MIN_ORDER_KRW = 5000
@@ -222,6 +225,12 @@ def validate_coin(c):
         errs.append(f"[{name}] 익절 수익률이 올바르지 않습니다.")
     if not (1 <= int(c["max_steps"]) <= 15):
         errs.append(f"[{name}] 최대 단계는 1~15 사이여야 합니다.")
+    if c["coin_budget"] < 0:
+        errs.append(f"[{name}] 코인 투입 한도는 0 이상이어야 합니다 (0 = 제한 없음).")
+    elif 0 < c["coin_budget"] < c["base_amount"]:
+        errs.append(f"[{name}] 코인 투입 한도가 1단계 매수금액보다 작습니다.")
+    if c["limit_action"] not in ("hold", "pause", "sell"):
+        errs.append(f"[{name}] 한도 도달 시 동작 값이 올바르지 않습니다.")
     if c["trailing_enabled"] and not (0 < c["trailing_pct"] < 50):
         errs.append(f"[{name}] 추적 익절 폭은 0~50% 사이여야 합니다.")
     return errs
