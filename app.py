@@ -18,7 +18,7 @@ from bot import Bot
 from backtest import fetch_candles, run_backtest, run_sweep
 from exchanges import exchange_class, ExchangeError
 
-VERSION = "1.3 (업비트·빗썸·코인원 / 여러 코인)"
+VERSION = "1.4"
 BASE = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, static_folder=os.path.join(BASE, "static"))
 bot = Bot()

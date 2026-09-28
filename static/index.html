@@ -8,11 +8,11 @@
 <style>
 :root{
   --bg:#f6f7f9; --card:#fff; --ink:#15181d; --ink2:#4a5260; --muted:#7a8391; --line:#e3e6ea;
-  --accent:#2f5bd3; --good:#1a7f4b; --bad:#c23a3a; --warn:#b26b00; --chip:#eef1f5;
+  --accent:#2f5bd3; --good:#1a7f4b; --bad:#c23a3a; --warn:#b26b00; --chip:#eef1f5; --zone:#e4e9f1;
 }
 @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
   --bg:#111418; --card:#1a1e24; --ink:#e9ecf0; --ink2:#b3bac5; --muted:#8a93a0; --line:#2a3039;
-  --accent:#7c9cf0; --good:#4cc38a; --bad:#f07a7a; --warn:#e3a646; --chip:#232830; } }
+  --accent:#7c9cf0; --good:#4cc38a; --bad:#f07a7a; --warn:#e3a646; --chip:#232830; --zone:#0b0e12; } }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 -apple-system,"Malgun Gothic","Apple SD Gothic Neo",sans-serif}
 header{display:flex;align-items:center;gap:8px;padding:12px 20px;border-bottom:1px solid var(--line);background:var(--card);position:sticky;top:0;z-index:5;flex-wrap:wrap}
@@ -70,10 +70,19 @@ select.auto{width:auto}
 .row .hint{grid-column:2}
 fieldset{border:1px solid var(--line);border-radius:10px;padding:8px 14px 12px;margin:0 0 12px;background:var(--card)}
 legend{color:var(--muted);font-size:12px;padding:0 6px}
-.coinedit{border:1px solid var(--line);border-radius:10px;margin:10px 0;background:var(--card)}
-.coinedit > summary{padding:10px 14px;color:var(--ink);font-weight:600;display:flex;gap:8px;align-items:center;list-style:none}
+.coinzone{background:var(--zone);border:1px solid var(--line);border-radius:14px;padding:4px 14px 14px;margin-bottom:12px}
+.coinzone > h2{margin:14px 0 4px}
+.coinzone > .hint{display:block;margin-bottom:6px}
+.coinedit{--cc:#5a6acf;border:1px solid color-mix(in srgb,var(--cc) 35%,var(--line));border-left:6px solid var(--cc);border-radius:10px;margin:10px 0;
+  background:color-mix(in srgb,var(--cc) 6%,var(--card));overflow:hidden}
+.coinedit > summary{padding:11px 14px;color:var(--ink);font-weight:650;display:flex;gap:8px;align-items:center;list-style:none;
+  background:color-mix(in srgb,var(--cc) 16%,var(--card))}
 .coinedit > summary::-webkit-details-marker{display:none}
-.coinedit .body{padding:0 14px 12px}
+.coinedit[open] > summary{border-bottom:1px solid color-mix(in srgb,var(--cc) 30%,var(--line))}
+.coinedit .body{padding:6px 14px 12px}
+.coinedit .body input,.coinedit .body select{background:var(--card)}
+.coinedit .cdot{width:10px;height:10px;border-radius:50%;background:var(--cc);flex:none}
+.coinedit .ctag{font-size:15px}
 .logs{font:12px/1.6 ui-monospace,Consolas,monospace;max-height:320px;overflow:auto;white-space:pre-wrap;color:var(--ink2)}
 .err{background:color-mix(in srgb,var(--bad) 12%,transparent);color:var(--bad);border-radius:8px;padding:8px 12px;margin:8px 0;display:none;white-space:pre-line}
 .note{background:color-mix(in srgb,var(--warn) 12%,transparent);border-radius:8px;padding:10px 12px;color:var(--ink2);font-size:13px}
@@ -134,13 +143,16 @@ tr.mine td{font-weight:650}
       <div class="row"><label>텔레그램 chat_id</label><input id="g_telegram_chat_id" autocomplete="off"></div>
     </fieldset>
 
+    <div class="coinzone">
     <h2>코인별 규칙</h2>
+    <span class="hint">코인 이름을 누르면 펼쳐집니다. 코인마다 색으로 구분됩니다.</span>
     <div id="coinEditors"></div>
     <div class="card" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <span class="hint">코인 추가</span>
       <select id="addCoinSel" class="auto"><option>BTC</option><option>ETH</option><option>XRP</option><option>SOL</option><option value="_">직접 입력…</option></select>
       <input id="addCoinTxt" class="hidden" placeholder="예: DOGE" style="width:110px">
       <button type="button" id="btnAddCoin">추가</button>
+    </div>
     </div>
 
     <div class="stick">
@@ -225,9 +237,17 @@ const COIN_FIELDS = [
   ['stop_loss_enabled', '손절 사용', 'check', '최대 단계까지 산 뒤에만 작동'],
   ['stop_loss_pct', '손절 기준 (%)', 'number', '평단가 대비 이만큼 떨어지면 전량 매도', 0.1],
 ];
+const COIN_COLORS = {BTC: '#f2901c', ETH: '#6b7fe3', XRP: '#1f9fc4', SOL: '#9b4dff'};
+const EXTRA_COLORS = ['#d6477b', '#2e9d6a', '#c28a12', '#4f63c9', '#c2553a', '#2a8f8f'];
+function coinColor(name) {
+  if (COIN_COLORS[name]) return COIN_COLORS[name];
+  let h = 0; for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return EXTRA_COLORS[h % EXTRA_COLORS.length];
+}
 function coinEditor(c, open) {
   const d = document.createElement('details');
   d.className = 'coinedit'; d.dataset.coin = c.coin; if (open) d.open = true;
+  d.style.setProperty('--cc', coinColor(c.coin));
   const f = COIN_FIELDS.map(([k, label, type, hint, step]) => {
     let inp;
     if (type === 'check') inp = `<div><input type="checkbox" data-k="${k}" ${c[k] ? 'checked' : ''}> <span class="hint">${hint}</span></div>`;
@@ -235,7 +255,7 @@ function coinEditor(c, open) {
     else inp = `<input data-k="${k}" type="${type}" ${step ? `step="${step}"` : ''} value="${esc(c[k])}">` + (hint ? `<div class="hint">${hint}</div>` : '');
     return `<div class="row"><label>${label}</label>${inp}</div>`;
   }).join('');
-  d.innerHTML = `<summary><span>▸ ${esc(c.coin)}</span><span class="hint" data-sum></span><span class="spacer"></span></summary>
+  d.innerHTML = `<summary><span class="cdot"></span><span class="ctag">${esc(c.coin)}</span><span class="hint" data-sum></span><span class="spacer"></span></summary>
     <div class="body">${f}
       <div class="tablewrap" style="margin-top:6px"><table data-ladder><thead><tr><th>단계</th><th>하락폭</th><th>매수금액</th><th>누적</th></tr></thead><tbody></tbody></table></div>
       <p style="margin:10px 0 0"><button type="button" class="danger small" data-del>이 코인 삭제</button></p>
