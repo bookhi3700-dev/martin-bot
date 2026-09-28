@@ -15,7 +15,7 @@ from flask import Flask, jsonify, request, send_from_directory, session, redirec
 from werkzeug.security import check_password_hash
 
 from bot import Bot
-from backtest import fetch_candles, run_backtest
+from backtest import fetch_candles, run_backtest, run_sweep
 from exchanges import Upbit, Bithumb, ExchangeError
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -138,7 +138,13 @@ def stop():
 
 @app.post("/api/reset")
 def reset():
-    errs = bot.reset_position()
+    errs = bot.reset_position((request.get_json(force=True) or {}).get("coin", ""))
+    return jsonify({"ok": not errs, "errors": errs})
+
+
+@app.post("/api/resume-coin")
+def resume_coin():
+    errs = bot.resume_coin((request.get_json(force=True) or {}).get("coin", ""))
     return jsonify({"ok": not errs, "errors": errs})
 
 
@@ -149,7 +155,8 @@ def test_keys():
     ex = (Bithumb if c["exchange"] == "bithumb" else Upbit)(c["access_key"], c["secret_key"])
     try:
         b = ex.balances()
-        return jsonify({"ok": True, "krw": b.get("KRW", 0), "coin": b.get(c["coin"], 0)})
+        return jsonify({"ok": True, "krw": b.get("KRW", 0),
+                        "coins": {x["coin"]: b.get(x["coin"], 0) for x in c["coins"]}})
     except Exception as e:
         return jsonify({"ok": False, "errors": [str(e)]})
 
@@ -160,21 +167,28 @@ def backtest():
         return jsonify({"ok": False, "errors": ["백테스트가 이미 진행 중입니다."]})
     body = request.get_json(force=True) or {}
     days = int(body.get("days", 365))
-    cfg = dict(bot.cfg)
-    for k, v in (body.get("overrides") or {}).items():
-        if k in cfg and v not in (None, ""):
-            cfg[k] = type(cfg[k])(v) if not isinstance(cfg[k], bool) else bool(v)
+    coin = body.get("coin") or bot.cfg["coins"][0]["coin"]
+    if coin not in bot.slots:
+        return jsonify({"ok": False, "errors": ["설정에 없는 코인입니다."]})
+    cfg = bot.coin_cfg(coin)
+    grid = body.get("grid")
 
     def job():
         bt_state.update(running=True, progress="시세 수집 중…", result=None, error="")
         try:
             ex = Bithumb() if cfg["exchange"] == "bithumb" else Upbit()
-            cs = fetch_candles(ex, f"KRW-{cfg['coin']}", days,
+            cs = fetch_candles(ex, f"KRW-{coin}", days,
                                progress=lambda n: bt_state.update(progress=f"시세 {n:,}개 수집"))
             if not cs:
                 raise ExchangeError("시세 데이터를 받지 못했습니다.")
-            bt_state["result"] = {"config": cfg, **run_backtest(cs, cfg)}
-            bt_state["result"]["config"] = {k: v for k, v in cfg.items() if k not in ("access_key", "secret_key", "telegram_token")}
+            bt_state["progress"] = "계산 중…"
+            if grid:
+                r = {"kind": "sweep", **run_sweep(cs, cfg, grid)}
+            else:
+                r = {"kind": "single", **run_backtest(cs, cfg)}
+            r["coin"] = coin
+            r["config"] = {k: v for k, v in cfg.items() if k not in ("access_key", "secret_key", "telegram_token", "coins")}
+            bt_state["result"] = r
             bt_state["progress"] = "완료"
         except Exception as e:
             bt_state["error"] = str(e)

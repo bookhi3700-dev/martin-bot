@@ -21,6 +21,10 @@ class ExchangeError(Exception):
     pass
 
 
+class OrderUnconfirmed(ExchangeError):
+    """주문은 나갔을 수 있지만 체결 여부를 확인하지 못함 → 중복 주문 방지를 위해 해당 코인 일시정지"""
+
+
 def _floor(x, digits=8):
     f = 10 ** digits
     return math.floor(x * f) / f
@@ -70,8 +74,11 @@ class _JwtExchange:
 
     # ---------- 시세 (공개) ----------
     def price(self, market):
-        data = self._get("/v1/ticker", {"markets": market})
-        return float(data[0]["trade_price"])
+        return self.prices([market])[market]
+
+    def prices(self, markets):
+        data = self._get("/v1/ticker", {"markets": ",".join(markets)})
+        return {d["market"]: float(d["trade_price"]) for d in data}
 
     def candles(self, market, unit_minutes=60, count=200, to=None):
         params = {"market": market, "count": count}
@@ -93,7 +100,7 @@ class _JwtExchange:
         before_krw, before_coin = self.balance("KRW"), self.balance(coin)
         if before_krw < krw * 1.003:  # 수수료 여유분 포함
             raise ExchangeError(f"원화 잔고 부족: 필요 {krw:,.0f}원 / 보유 {before_krw:,.0f}원")
-        oid = self._place(market, "bid", price=str(int(krw)))
+        oid = self._place_safe(market, "bid", price=str(int(krw)))
         return self._settle(oid, market, "bid", before_krw, before_coin)
 
     def market_sell(self, market, volume):
@@ -102,8 +109,15 @@ class _JwtExchange:
         vol = _floor(min(volume, before_coin))
         if vol <= 0:
             raise ExchangeError(f"{coin} 보유 수량이 없습니다.")
-        oid = self._place(market, "ask", volume=f"{vol:.8f}")
+        oid = self._place_safe(market, "ask", volume=f"{vol:.8f}")
         return self._settle(oid, market, "ask", before_krw, before_coin)
+
+    def _place_safe(self, market, side, **kw):
+        try:
+            return self._place(market, side, **kw)
+        except requests.RequestException as e:
+            # 요청이 거래소에 도달했는지 알 수 없음 (타임아웃 등)
+            raise OrderUnconfirmed(f"주문 전송 중 연결 오류({type(e).__name__}) — 주문이 들어갔는지 거래소 앱에서 확인해 주세요.")
 
     def _settle(self, oid, market, side, before_krw, before_coin):
         """체결 결과 확인. 주문 조회 실패 시 잔고 변화로 계산."""
@@ -112,7 +126,7 @@ class _JwtExchange:
             time.sleep(0.5)
             try:
                 o = self._order(oid)
-            except ExchangeError:
+            except (ExchangeError, requests.RequestException):
                 continue
             if o.get("state") in ("done", "cancel") and float(o.get("executed_volume") or 0) > 0:
                 vol = float(o["executed_volume"])
@@ -123,13 +137,16 @@ class _JwtExchange:
                 return {"volume": vol, "krw": krw, "price": funds / vol if vol else 0, "fee": fee}
         # fallback: 잔고 차이
         time.sleep(1)
-        b = self.balances()
+        try:
+            b = self.balances()
+        except (ExchangeError, requests.RequestException):
+            raise OrderUnconfirmed("주문 후 잔고 조회에 실패했습니다. 거래소 앱에서 체결 여부를 확인해 주세요.")
         dk, dc = b.get("KRW", 0) - before_krw, b.get(coin, 0) - before_coin
         if side == "bid" and dc > 0:
             return {"volume": dc, "krw": -dk, "price": -dk / dc, "fee": 0}
         if side == "ask" and dc < 0:
             return {"volume": -dc, "krw": dk, "price": dk / -dc, "fee": 0}
-        raise ExchangeError("주문 체결을 확인하지 못했습니다. 거래소 앱에서 직접 확인해 주세요.")
+        raise OrderUnconfirmed("주문 체결을 확인하지 못했습니다. 거래소 앱에서 직접 확인해 주세요.")
 
 
 class Upbit(_JwtExchange):
@@ -177,6 +194,9 @@ class Paper:
 
     def price(self, market):
         return self.src.price(market)
+
+    def prices(self, markets):
+        return self.src.prices(markets)
 
     def candles(self, *a, **k):
         return self.src.candles(*a, **k)

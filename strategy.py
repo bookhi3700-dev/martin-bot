@@ -1,61 +1,96 @@
 """마틴게일 물타기 전략 (순수 계산 로직 — 거래소와 무관)
 
-규칙
- 1) 포지션이 없으면 기본금액(base_amount)으로 1단계 매수
- 2) 기준가(평단가 또는 직전 매수가)보다 drop_pct% 이상 떨어지면
-    이전 매수금액 x martin_multiplier 로 추가 매수 (max_steps 까지)
- 3) 현재가가 평단가(수수료 포함) 대비 take_profit_pct% 이상이면 전량 매도 → 1사이클 종료
- 4) (선택) 최대 단계 도달 후 평단가 대비 stop_loss_pct% 이상 떨어지면 전량 손절
- 5) auto_restart 가 켜져 있으면 다음 사이클을 기본금액으로 다시 시작
+코인 한 개의 규칙
+ 1) 포지션이 없으면 1단계 매수 (base_amount)
+ 2) 기준가(평단가 또는 직전 매수가)보다 '이번 단계 하락폭'% 이상 떨어지면
+    직전 매수금액 x martin_multiplier 로 추가 매수 (max_steps 까지)
+    - 단계별 하락폭 drop_steps 예: "5,5,7,10,15" → 2단계 5%, 3단계 5%, 4단계 7%, 5단계 10%, 6단계 15%
+      (단계 수보다 짧으면 마지막 값을 반복)
+ 3) 익절: 평단가(수수료 포함) 대비 take_profit_pct% 도달
+    - 추적 익절 끔: 즉시 전량 매도
+    - 추적 익절 켬: 그때부터 고점을 따라가다 고점 대비 trailing_pct% 빠지면 매도
+      (단, 목표 익절가 밑으로는 기다리지 않고 바로 매도 → 최소 목표 수익은 확보)
+ 4) (선택) 최대 단계 이후 평단가 대비 stop_loss_pct% 하락 시 전량 손절
+ 5) auto_restart 켜져 있으면 다음 사이클 자동 시작
 """
 from dataclasses import dataclass, field, asdict
 
-DEFAULT_CONFIG = {
+GLOBAL_DEFAULTS = {
     "exchange": "upbit",          # upbit | bithumb
-    "coin": "BTC",                # BTC | ETH | XRP | SOL ...
     "mode": "paper",              # paper(모의투자) | live(실전)
     "access_key": "",
     "secret_key": "",
-    "base_amount": 10000,         # 1단계 매수 금액(원)
-    "martin_multiplier": 2.0,     # 추가 매수 배수
-    "drop_pct": 5.0,              # 추가 매수 하락폭(%)
-    "drop_basis": "avg",          # avg(평단가 기준) | last(직전 매수가 기준)
-    "max_steps": 6,               # 최대 매수 단계
-    "take_profit_pct": 10.0,      # 익절 수익률(%) — 평단가(수수료 포함) 기준
-    "stop_loss_enabled": False,   # 최대 단계 이후 손절 사용
-    "stop_loss_pct": 15.0,        # 손절 기준(%) — 평단가 기준
-    "auto_restart": True,         # 익절/손절 후 자동으로 새 사이클 시작
-    "check_interval_sec": 10,     # 시세 확인 주기(초)
-    "fee_pct": 0.05,              # 모의투자/백테스트용 수수료(%)
+    "total_budget": 0,            # 전체 투입 한도(원) — 0 이면 제한 없음
+    "check_interval_sec": 10,
+    "fee_pct": 0.05,              # 모의투자/백테스트 수수료(%)
+    "slippage_pct": 0.1,          # 백테스트 슬리피지(%) — 시장가 주문이 불리하게 체결되는 정도
     "telegram_token": "",
     "telegram_chat_id": "",
+}
+
+COIN_DEFAULTS = {
+    "coin": "BTC",
+    "enabled": True,
+    "base_amount": 10000,
+    "martin_multiplier": 2.0,
+    "drop_steps": "5",            # 단계별 하락폭(%) 목록, 쉼표 구분
+    "drop_basis": "avg",          # avg(평단가) | last(직전 매수가)
+    "max_steps": 6,
+    "take_profit_pct": 10.0,
+    "trailing_enabled": False,
+    "trailing_pct": 2.0,
+    "stop_loss_enabled": False,
+    "stop_loss_pct": 15.0,
+    "auto_restart": True,
 }
 
 MIN_ORDER_KRW = 5000
 
 
+def parse_drops(s):
+    try:
+        vals = [float(x) for x in str(s).replace(" ", "").split(",") if x != ""]
+    except ValueError:
+        return []
+    return vals
+
+
+def drop_for_step(cfg, next_step):
+    """next_step: 다음에 살 단계 번호 (2부터)"""
+    vals = parse_drops(cfg["drop_steps"]) or [5.0]
+    i = next_step - 2
+    return vals[i] if i < len(vals) else vals[-1]
+
+
 def step_amount(cfg, step_index):
-    """step_index: 0부터 시작 (0 = 1단계)"""
+    """step_index: 0부터 (0 = 1단계)"""
     return int(round(cfg["base_amount"] * (cfg["martin_multiplier"] ** step_index)))
 
 
 def ladder(cfg):
-    """단계별 (매수액, 누적액) 표"""
+    """단계별 매수액·누적액·하락폭 표"""
     rows, total = [], 0
     for i in range(int(cfg["max_steps"])):
         a = step_amount(cfg, i)
         total += a
-        rows.append({"step": i + 1, "amount": a, "cumulative": total})
+        rows.append({"step": i + 1, "amount": a, "cumulative": total,
+                     "drop": None if i == 0 else drop_for_step(cfg, i + 1)})
     return rows
+
+
+def max_budget(cfg):
+    return sum(step_amount(cfg, i) for i in range(int(cfg["max_steps"])))
 
 
 @dataclass
 class Position:
-    step: int = 0                 # 현재 몇 단계까지 매수했는지 (0 = 포지션 없음)
+    step: int = 0
     cost: float = 0.0             # 총 투입 원화 (수수료 포함)
-    volume: float = 0.0           # 보유 수량
+    volume: float = 0.0
     last_buy_price: float = 0.0
     cycle_started_at: str = ""
+    trail_armed: bool = False
+    trail_peak: float = 0.0
     buys: list = field(default_factory=list)
 
     @property
@@ -76,19 +111,18 @@ class Position:
 
 @dataclass
 class Action:
-    kind: str            # "buy" | "sell" | "hold"
+    kind: str            # buy | sell | hold
     reason: str = ""
-    amount_krw: float = 0.0   # buy 일 때 원화 금액
-    volume: float = 0.0       # sell 일 때 수량
+    amount_krw: float = 0.0
+    volume: float = 0.0
     trigger_price: float = 0.0
 
 
 def next_buy_trigger(pos, cfg):
-    """다음 추가 매수가 발동되는 가격 (없으면 None)"""
     if pos.step == 0 or pos.step >= int(cfg["max_steps"]):
         return None
     ref = pos.avg_price if cfg["drop_basis"] == "avg" else pos.last_buy_price
-    return ref * (1 - cfg["drop_pct"] / 100)
+    return ref * (1 - drop_for_step(cfg, pos.step + 1) / 100)
 
 
 def take_profit_price(pos, cfg):
@@ -98,27 +132,50 @@ def take_profit_price(pos, cfg):
     return pos.avg_price * (1 + cfg["take_profit_pct"] / 100) / (1 - cfg.get("fee_pct", 0) / 100)
 
 
+def trailing_stop_price(pos, cfg):
+    """추적 익절 중일 때 이 가격 이하로 내려오면 매도"""
+    if not pos.trail_armed:
+        return None
+    return max(pos.trail_peak * (1 - cfg["trailing_pct"] / 100), take_profit_price(pos, cfg))
+
+
 def stop_loss_price(pos, cfg):
     if pos.step == 0 or not cfg["stop_loss_enabled"] or pos.step < int(cfg["max_steps"]):
         return None
     return pos.avg_price * (1 - cfg["stop_loss_pct"] / 100)
 
 
-def decide(pos, price, cfg, can_start_new=True):
-    """현재가로 다음 행동 결정"""
+def update_trailing(pos, price, cfg):
+    """추적 익절 상태 갱신. 새로 시작되면 True"""
+    if pos.step == 0 or not cfg["trailing_enabled"]:
+        return False
+    if pos.trail_armed:
+        pos.trail_peak = max(pos.trail_peak, price)
+        return False
+    if price >= take_profit_price(pos, cfg):
+        pos.trail_armed, pos.trail_peak = True, price
+        return True
+    return False
+
+
+def decide(pos, price, cfg):
     if pos.step == 0:
-        if not can_start_new:
-            return Action("hold", "자동 재시작 꺼짐 — 대기")
         return Action("buy", "사이클 시작 (1단계)", amount_krw=step_amount(cfg, 0), trigger_price=price)
 
     tp = take_profit_price(pos, cfg)
-    if price >= tp:
+    if cfg["trailing_enabled"]:
+        ts = trailing_stop_price(pos, cfg)
+        if ts is not None and price <= ts:
+            gain = (price * (1 - cfg.get("fee_pct", 0) / 100) / pos.avg_price - 1) * 100
+            return Action("sell", f"추적 익절 (고점 대비 -{cfg['trailing_pct']}%, 수익 약 {gain:+.1f}%)",
+                          volume=pos.volume, trigger_price=ts)
+    elif price >= tp:
         return Action("sell", f"익절 +{cfg['take_profit_pct']}% 도달", volume=pos.volume, trigger_price=tp)
 
     trig = next_buy_trigger(pos, cfg)
-    if trig is not None and price <= trig:
+    if trig is not None and price <= trig and not pos.trail_armed:
         n = pos.step + 1
-        return Action("buy", f"{cfg['drop_pct']}% 하락 → {n}단계 추가 매수",
+        return Action("buy", f"{drop_for_step(cfg, n)}% 하락 → {n}단계 추가 매수",
                       amount_krw=step_amount(cfg, pos.step), trigger_price=trig)
 
     sl = stop_loss_price(pos, cfg)
@@ -139,7 +196,6 @@ def apply_buy(pos, krw_spent_with_fee, volume, price, when=""):
 
 
 def close_position(pos, krw_received_net):
-    """전량 매도 후 실현손익 반환, 포지션 초기화"""
     profit = krw_received_net - pos.cost
     result = {
         "steps": pos.step,
@@ -149,6 +205,23 @@ def close_position(pos, krw_received_net):
         "profit_pct": round(profit / pos.cost * 100, 2) if pos.cost else 0,
         "started_at": pos.cycle_started_at,
     }
-    fresh = Position()
-    pos.__dict__.update(fresh.__dict__)
+    pos.__dict__.update(Position().__dict__)
     return result
+
+
+def validate_coin(c):
+    errs, name = [], c.get("coin", "?")
+    if c["base_amount"] < MIN_ORDER_KRW:
+        errs.append(f"[{name}] 1단계 매수금액은 최소 {MIN_ORDER_KRW:,}원입니다.")
+    if c["martin_multiplier"] < 1:
+        errs.append(f"[{name}] 마틴 배수는 1 이상이어야 합니다.")
+    d = parse_drops(c["drop_steps"])
+    if not d or any(not (0 < x < 100) for x in d):
+        errs.append(f"[{name}] 단계별 하락폭은 0~100 사이 숫자를 쉼표로 적어주세요. 예: 5,5,7,10")
+    if not (0 < c["take_profit_pct"] < 1000):
+        errs.append(f"[{name}] 익절 수익률이 올바르지 않습니다.")
+    if not (1 <= int(c["max_steps"]) <= 15):
+        errs.append(f"[{name}] 최대 단계는 1~15 사이여야 합니다.")
+    if c["trailing_enabled"] and not (0 < c["trailing_pct"] < 50):
+        errs.append(f"[{name}] 추적 익절 폭은 0~50% 사이여야 합니다.")
+    return errs
