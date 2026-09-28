@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>마틴봇 로그인</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#15181d;--muted:#7a8391;--line:#e3e6ea;--accent:#2f5bd3;--bad:#c23a3a}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#111418;--card:#1a1e24;--ink:#e9ecf0;--muted:#8a93a0;--line:#2a3039;--accent:#7c9cf0;--bad:#f07a7a}}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,"Malgun Gothic","Apple SD Gothic Neo",sans-serif;padding:16px}
+form{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:28px 24px;width:100%;max-width:340px}
+h1{font-size:19px;margin:0 0 4px}
+p{color:var(--muted);font-size:13px;margin:0 0 18px}
+input{font:inherit;width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--ink)}
+button{font:inherit;width:100%;margin-top:12px;padding:10px;border:none;border-radius:9px;background:var(--accent);color:#fff;cursor:pointer}
+#err{color:var(--bad);font-size:13px;min-height:20px;margin-top:10px}
+</style>
+</head>
+<body>
+<form id="f">
+  <h1>마틴봇</h1>
+  <p>대시보드 비밀번호를 입력하세요.</p>
+  <input id="pw" type="password" autocomplete="current-password" autofocus required>
+  <button>로그인</button>
+  <div id="err"></div>
+</form>
+<script>
+document.getElementById('f').onsubmit = async e => {
+  e.preventDefault();
+  const r = await fetch('/login', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-Martin': '1'},
+    body: JSON.stringify({password: document.getElementById('pw').value})});
+  const d = await r.json();
+  if (d.ok) location.href = '/'; else document.getElementById('err').textContent = d.error;
+};
+</script>
+</body>
+</html>

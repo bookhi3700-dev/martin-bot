@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>마틴봇 대시보드</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+:root{
+  --bg:#f6f7f9; --card:#fff; --ink:#15181d; --ink2:#4a5260; --muted:#7a8391; --line:#e3e6ea;
+  --accent:#2f5bd3; --good:#1a7f4b; --bad:#c23a3a; --warn:#b26b00; --chip:#eef1f5;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#111418; --card:#1a1e24; --ink:#e9ecf0; --ink2:#b3bac5; --muted:#8a93a0; --line:#2a3039;
+  --accent:#7c9cf0; --good:#4cc38a; --bad:#f07a7a; --warn:#e3a646; --chip:#232830; } }
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 -apple-system,"Malgun Gothic","Apple SD Gothic Neo",sans-serif}
+header{display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--line);background:var(--card);position:sticky;top:0;z-index:5;flex-wrap:wrap}
+header h1{font-size:17px;margin:0}
+.pill{padding:3px 10px;border-radius:99px;font-size:12px;font-weight:600;background:var(--chip);color:var(--ink2)}
+.pill.on{background:color-mix(in srgb,var(--good) 18%,transparent);color:var(--good)}
+.pill.live{background:color-mix(in srgb,var(--bad) 18%,transparent);color:var(--bad)}
+.spacer{flex:1}
+button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:7px 14px;border-radius:8px;cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.danger{color:var(--bad)}
+button:disabled{opacity:.5;cursor:default}
+nav{display:flex;gap:4px;padding:10px 20px 0}
+nav button{border:none;background:none;color:var(--muted);border-bottom:2px solid transparent;border-radius:0;padding:8px 12px}
+nav button.act{color:var(--ink);border-color:var(--accent);font-weight:600}
+main{padding:16px 20px 40px;max-width:1200px;margin:0 auto}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.stat .k{color:var(--muted);font-size:12px}
+.stat .v{font-size:20px;font-weight:650;margin-top:2px;font-variant-numeric:tabular-nums}
+.stat .s{color:var(--ink2);font-size:12px}
+.pos{color:var(--good)} .neg{color:var(--bad)}
+h2{font-size:15px;margin:22px 0 10px}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}
+th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th{color:var(--muted);font-weight:500;font-size:12px}
+th:first-child,td:first-child{text-align:left}
+tr.done td{color:var(--muted)} tr.cur td{font-weight:650}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:820px){.two{grid-template-columns:1fr}}
+form .row{display:grid;grid-template-columns:170px 1fr;gap:10px;align-items:center;padding:6px 0}
+form label{color:var(--ink2)}
+input,select{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);width:100%}
+input[type=checkbox],#btDays{width:auto}
+.hint{color:var(--muted);font-size:12px;grid-column:2}
+fieldset{border:1px solid var(--line);border-radius:10px;padding:8px 14px 12px;margin:0 0 12px}
+legend{color:var(--muted);font-size:12px;padding:0 6px}
+.logs{font:12px/1.6 ui-monospace,Consolas,monospace;max-height:320px;overflow:auto;white-space:pre-wrap;color:var(--ink2)}
+.err{background:color-mix(in srgb,var(--bad) 12%,transparent);color:var(--bad);border-radius:8px;padding:8px 12px;margin:8px 0;display:none}
+.note{background:color-mix(in srgb,var(--warn) 12%,transparent);border-radius:8px;padding:10px 12px;color:var(--ink2);font-size:13px}
+.hidden{display:none}
+.chartbox{position:relative;height:340px}
+.tablewrap{overflow-x:auto}
+@media (max-width:560px){ header,main,nav{padding-left:16px;padding-right:16px} form .row{grid-template-columns:1fr} .hint{grid-column:1} }
+</style>
+</head>
+<body>
+<header>
+  <h1>마틴봇</h1>
+  <span id="runPill" class="pill">정지</span>
+  <span id="modePill" class="pill">모의투자</span>
+  <span id="market" class="pill"></span>
+  <span class="spacer"></span>
+  <button id="btnStart" class="primary">시작</button>
+  <button id="btnStop" class="danger">중지</button>
+  <button id="btnLogout" class="hidden">로그아웃</button>
+</header>
+<nav>
+  <button data-tab="dash" class="act">현황</button>
+  <button data-tab="settings">설정</button>
+  <button data-tab="bt">백테스트</button>
+</nav>
+<main>
+  <div id="globalErr" class="err"></div>
+
+  <!-- 현황 -->
+  <section id="tab-dash">
+    <div class="grid">
+      <div class="card stat"><div class="k">현재가</div><div class="v" id="sPrice">-</div><div class="s" id="sUpd"></div></div>
+      <div class="card stat"><div class="k">진행 단계</div><div class="v" id="sStep">-</div><div class="s" id="sStepSub"></div></div>
+      <div class="card stat"><div class="k">평단가 (수수료 포함)</div><div class="v" id="sAvg">-</div><div class="s" id="sVol"></div></div>
+      <div class="card stat"><div class="k">투입금 / 평가손익</div><div class="v" id="sCost">-</div><div class="s" id="sPnl"></div></div>
+      <div class="card stat"><div class="k">다음 추가 매수</div><div class="v" id="sNext">-</div><div class="s" id="sNextSub"></div></div>
+      <div class="card stat"><div class="k">익절 목표가</div><div class="v" id="sTp">-</div><div class="s" id="sTpSub"></div></div>
+      <div class="card stat"><div class="k">완료 사이클 / 누적 실현손익</div><div class="v" id="sReal">-</div><div class="s" id="sCyc"></div></div>
+    </div>
+
+    <div class="two">
+      <div>
+        <h2>단계별 매수 계획</h2>
+        <div class="card tablewrap"><table id="ladder"><thead><tr><th>단계</th><th>매수금액</th><th>누적 투입</th><th>상태</th></tr></thead><tbody></tbody></table></div>
+      </div>
+      <div>
+        <h2>이번 사이클 매수 내역</h2>
+        <div class="card tablewrap"><table id="buys"><thead><tr><th>단계</th><th>체결가</th><th>금액</th><th>시각</th></tr></thead><tbody></tbody></table></div>
+      </div>
+    </div>
+
+    <h2>완료된 사이클</h2>
+    <div class="card tablewrap"><table id="hist"><thead><tr><th>종료</th><th>사유</th><th>단계</th><th>투입</th><th>손익</th><th>수익률</th></tr></thead><tbody></tbody></table></div>
+
+    <h2>로그</h2>
+    <div class="card logs" id="logs"></div>
+    <p style="margin-top:14px"><button id="btnReset" class="danger">포지션 기록 초기화</button>
+      <span class="hint">거래소 잔고는 건드리지 않고 봇의 단계/평단 기록만 지웁니다. 수동으로 매도했을 때 사용하세요.</span></p>
+  </section>
+
+  <!-- 설정 -->
+  <section id="tab-settings" class="hidden">
+    <form id="cfgForm">
+      <fieldset><legend>거래소·코인</legend>
+        <div class="row"><label>실행 모드</label><select name="mode"><option value="paper">모의투자 (실제 주문 안 함)</option><option value="live">실전 (실제 주문)</option></select></div>
+        <div class="row"><label>거래소</label><select name="exchange"><option value="upbit">업비트</option><option value="bithumb">빗썸</option></select></div>
+        <div class="row"><label>코인</label><select name="coin"><option>BTC</option><option>ETH</option><option>XRP</option><option>SOL</option></select></div>
+        <div class="row"><label>Access Key</label><input name="access_key" autocomplete="off" placeholder="실전 모드에서만 필요"></div>
+        <div class="row"><label>Secret Key</label><input name="secret_key" type="password" autocomplete="off"></div>
+        <div class="row"><span></span><div><button type="button" id="btnTest">API 키 확인 (잔고 조회)</button> <span id="testRes" class="hint"></span></div></div>
+        <div class="row"><span></span><div class="hint">키 발급 시 <b>출금 권한은 반드시 끄세요.</b> 조회·주문 권한만 필요합니다. 이 PC의 IP를 허용 IP로 등록해야 합니다.</div></div>
+      </fieldset>
+      <fieldset><legend>마틴 규칙</legend>
+        <div class="row"><label>1단계 매수금액 (원)</label><input name="base_amount" type="number" min="5000" step="1000"></div>
+        <div class="row"><label>마틴 배수</label><input name="martin_multiplier" type="number" min="1" step="0.1"><div class="hint">2 = 1만→2만→4만…  1.5 = 1만→1.5만→2.25만…</div></div>
+        <div class="row"><label>추가 매수 하락폭 (%)</label><input name="drop_pct" type="number" min="0.1" step="0.1"></div>
+        <div class="row"><label>하락 기준</label><select name="drop_basis"><option value="avg">평단가 기준</option><option value="last">직전 매수가 기준</option></select></div>
+        <div class="row"><label>최대 단계</label><input name="max_steps" type="number" min="1" max="15" step="1"><div class="hint" id="maxHint"></div></div>
+        <div class="row"><label>익절 수익률 (%)</label><input name="take_profit_pct" type="number" min="0.1" step="0.1"><div class="hint">평단가(수수료 포함) 대비 이만큼 오르면 전량 매도 → 1사이클 종료</div></div>
+        <div class="row"><label>자동 재시작</label><div><input name="auto_restart" type="checkbox"> <span class="hint">익절 후 바로 1단계부터 새 사이클 시작</span></div></div>
+      </fieldset>
+      <fieldset><legend>손절 (선택)</legend>
+        <div class="row"><label>손절 사용</label><div><input name="stop_loss_enabled" type="checkbox"> <span class="hint">최대 단계까지 산 뒤에만 작동</span></div></div>
+        <div class="row"><label>손절 기준 (%)</label><input name="stop_loss_pct" type="number" min="0.1" step="0.1"><div class="hint">평단가 대비 이만큼 떨어지면 전량 매도</div></div>
+      </fieldset>
+      <fieldset><legend>기타</legend>
+        <div class="row"><label>시세 확인 주기 (초)</label><input name="check_interval_sec" type="number" min="3" step="1"></div>
+        <div class="row"><label>수수료 (%)</label><input name="fee_pct" type="number" min="0" step="0.01"><div class="hint">모의투자·백테스트 계산용 (업비트 0.05%)</div></div>
+        <div class="row"><label>텔레그램 봇 토큰</label><input name="telegram_token" autocomplete="off" placeholder="선택 — 매수/매도 알림"></div>
+        <div class="row"><label>텔레그램 chat_id</label><input name="telegram_chat_id" autocomplete="off"></div>
+      </fieldset>
+      <div id="cfgErr" class="err"></div>
+      <button type="submit" class="primary">설정 저장</button> <span id="cfgOk" class="hint"></span>
+    </form>
+  </section>
+
+  <!-- 백테스트 -->
+  <section id="tab-bt" class="hidden">
+    <div class="note">현재 <b>저장된 설정</b>으로 과거 1시간봉 시세를 시뮬레이션합니다. 설정을 바꿨다면 먼저 저장하세요. 과거 결과가 미래 수익을 보장하지 않습니다.</div>
+    <p>기간
+      <select id="btDays"><option value="90">3개월</option><option value="180">6개월</option><option value="365" selected>1년</option><option value="730">2년</option><option value="1095">3년</option></select>
+      <button id="btnBt" class="primary">백테스트 실행</button> <span id="btProg" class="hint"></span></p>
+    <div id="btErr" class="err"></div>
+    <div id="btOut" class="hidden">
+      <div class="grid" id="btStats"></div>
+      <h2>가격과 매매 시점</h2>
+      <div class="card"><div class="chartbox"><canvas id="btChart"></canvas></div></div>
+      <h2>사이클 기록 (최근 100개)</h2>
+      <div class="card tablewrap"><table id="btHist"><thead><tr><th>시작</th><th>종료</th><th>사유</th><th>단계</th><th>투입</th><th>손익</th><th>수익률</th></tr></thead><tbody></tbody></table></div>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const won = v => v == null ? '-' : Math.round(v).toLocaleString('ko-KR') + '원';
+const num = v => { if (v == null) return '-'; const d = v >= 1000 ? 0 : v >= 10 ? 2 : 4; return v.toLocaleString('ko-KR', {maximumFractionDigits: d}); };
+const signed = v => v == null ? '-' : (v > 0 ? '+' : '') + Math.round(v).toLocaleString('ko-KR') + '원';
+const cls = v => v > 0 ? 'pos' : v < 0 ? 'neg' : '';
+async function api(path, body) {
+  const r = await fetch(path, body === undefined ? {} : {method: 'POST', headers: {'Content-Type': 'application/json', 'X-Martin': '1'}, body: JSON.stringify(body)});
+  if (r.status === 401) { location.href = '/login'; throw new Error('login'); }
+  return r.json();
+}
+function showErr(el, errs) { el.style.display = errs && errs.length ? 'block' : 'none'; el.textContent = (errs || []).join('\n'); }
+
+// 탭
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav button').forEach(x => x.classList.toggle('act', x === b));
+  ['dash', 'settings', 'bt'].forEach(t => $('#tab-' + t).classList.toggle('hidden', t !== b.dataset.tab));
+});
+
+let cfg = {};
+async function loadConfig() {
+  cfg = await api('/api/config');
+  const f = $('#cfgForm');
+  for (const [k, v] of Object.entries(cfg)) {
+    const el = f.elements[k]; if (!el) continue;
+    if (el.type === 'checkbox') el.checked = !!v; else el.value = v;
+  }
+  updateMaxHint();
+}
+function updateMaxHint() {
+  const f = $('#cfgForm'), b = +f.base_amount.value, m = +f.martin_multiplier.value, n = +f.max_steps.value;
+  let t = 0; for (let i = 0; i < n; i++) t += Math.round(b * m ** i);
+  $('#maxHint').textContent = `최대 단계까지 모두 매수하면 총 ${t.toLocaleString('ko-KR')}원이 필요합니다.`;
+}
+['base_amount', 'martin_multiplier', 'max_steps'].forEach(n => $('#cfgForm').elements[n].addEventListener('input', updateMaxHint));
+
+$('#cfgForm').onsubmit = async e => {
+  e.preventDefault();
+  const f = e.target, body = {};
+  for (const el of f.elements) if (el.name) body[el.name] = el.type === 'checkbox' ? el.checked : el.value;
+  if (body.mode === 'live' && cfg.mode !== 'live' && !confirm('실전 모드는 실제 돈으로 주문합니다. 계속할까요?')) return;
+  const r = await api('/api/config', body);
+  showErr($('#cfgErr'), r.errors);
+  if (r.ok) { $('#cfgOk').textContent = '저장됨 ✓'; setTimeout(() => $('#cfgOk').textContent = '', 2500); await loadConfig(); refresh(); }
+};
+$('#btnTest').onclick = async () => {
+  $('#testRes').textContent = '확인 중…';
+  const r = await api('/api/test-keys', {});
+  $('#testRes').textContent = r.ok ? `성공 — 원화 ${won(r.krw)}, ${cfg.coin} ${r.coin}` : '실패: ' + r.errors.join(' ');
+};
+$('#btnStart').onclick = async () => {
+  if (cfg.mode === 'live' && !confirm(`실전 모드로 ${cfg.exchange === 'bithumb' ? '빗썸' : '업비트'} ${cfg.coin} 자동매매를 시작합니다. 계속할까요?`)) return;
+  const r = await api('/api/start', {}); showErr($('#globalErr'), r.errors); refresh();
+};
+$('#btnLogout').onclick = async () => { await api('/logout', {}); location.href = '/login'; };
+$('#btnStop').onclick = async () => { await api('/api/stop', {}); refresh(); };
+$('#btnReset').onclick = async () => {
+  if (!confirm('봇의 포지션 기록(단계, 평단가)을 초기화할까요? 거래소 잔고는 그대로입니다.')) return;
+  const r = await api('/api/reset', {}); showErr($('#globalErr'), r.errors); refresh();
+};
+
+async function refresh() {
+  const s = await api('/api/status'), p = s.position;
+  $('#btnLogout').classList.toggle('hidden', !s.auth);
+  $('#runPill').textContent = s.running ? '실행 중' : '정지'; $('#runPill').className = 'pill' + (s.running ? ' on' : '');
+  $('#modePill').textContent = cfg.mode === 'live' ? '실전' : '모의투자'; $('#modePill').className = 'pill' + (cfg.mode === 'live' ? ' live' : '');
+  $('#market').textContent = (cfg.exchange === 'bithumb' ? '빗썸 ' : '업비트 ') + s.market;
+  $('#btnStart').disabled = s.running; $('#btnStop').disabled = !s.running;
+  $('#sPrice').textContent = num(s.price); $('#sUpd').textContent = s.last_error ? '⚠ ' + s.last_error : (s.running ? '자동 갱신 중' : '');
+  $('#sStep').textContent = `${p.step} / ${cfg.max_steps}`;
+  $('#sStepSub').textContent = p.step ? `사이클 시작 ${p.cycle_started_at}` : '포지션 없음';
+  $('#sAvg').textContent = p.step ? num(p.avg_price) : '-';
+  $('#sVol').textContent = p.step ? `보유 ${p.volume.toFixed(8)} ${cfg.coin}` : '';
+  $('#sCost').textContent = p.step ? won(p.cost) : '-';
+  $('#sPnl').innerHTML = p.pnl != null ? `<span class="${cls(p.pnl)}">${signed(p.pnl)} (${(p.pnl / p.cost * 100).toFixed(2)}%)</span>` : '';
+  $('#sNext').textContent = p.next_buy_price ? num(p.next_buy_price) : (p.step >= cfg.max_steps ? '최대 단계' : '-');
+  $('#sNextSub').textContent = p.next_buy_price ? `${won(p.next_buy_amount)} 매수 · 현재가 대비 ${s.price ? ((p.next_buy_price / s.price - 1) * 100).toFixed(2) + '%' : ''}` : (p.stop_loss_price ? '손절가 ' + num(p.stop_loss_price) : '');
+  $('#sTp').textContent = p.take_profit_price ? num(p.take_profit_price) : '-';
+  $('#sTpSub').textContent = p.take_profit_price && s.price ? `현재가 대비 +${((p.take_profit_price / s.price - 1) * 100).toFixed(2)}%` : '';
+  $('#sReal').innerHTML = `<span class="${cls(s.stats.realized)}">${signed(s.stats.realized)}</span>`;
+  $('#sCyc').textContent = `${s.stats.cycles}회 완료`;
+  $('#ladder tbody').innerHTML = s.ladder.map(r => `<tr class="${r.step < p.step ? 'done' : r.step === p.step ? 'cur' : ''}"><td>${r.step}단계</td><td>${won(r.amount)}</td><td>${won(r.cumulative)}</td><td>${r.step <= p.step ? '매수 완료' : r.step === p.step + 1 && p.step ? '대기' : ''}</td></tr>`).join('');
+  $('#buys tbody').innerHTML = p.buys.map(b => `<tr><td>${b.step}단계</td><td>${num(b.price)}</td><td>${won(b.krw)}</td><td>${b.at}</td></tr>`).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--muted)">없음</td></tr>';
+  $('#hist tbody').innerHTML = s.stats.history.map(h => `<tr><td>${h.ended_at}</td><td>${h.reason}</td><td>${h.steps}</td><td>${won(h.cost)}</td><td class="${cls(h.profit)}">${signed(h.profit)}</td><td class="${cls(h.profit)}">${h.profit_pct}%</td></tr>`).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--muted)">아직 없음</td></tr>';
+  $('#logs').textContent = s.logs.join('\n');
+}
+
+// 백테스트
+let chart;
+$('#btnBt').onclick = async () => {
+  showErr($('#btErr'), []);
+  const r = await api('/api/backtest', {days: +$('#btDays').value});
+  if (!r.ok) return showErr($('#btErr'), r.errors);
+  $('#btnBt').disabled = true;
+  const poll = setInterval(async () => {
+    const b = await api('/api/backtest');
+    $('#btProg').textContent = b.progress;
+    if (b.running) return;
+    clearInterval(poll); $('#btnBt').disabled = false;
+    if (b.error) return showErr($('#btErr'), [b.error]);
+    if (b.result) renderBt(b.result);
+  }, 700);
+};
+function renderBt(r) {
+  $('#btOut').classList.remove('hidden');
+  const st = [
+    ['기간', r.period, `코인 가격 ${r.price_change_pct > 0 ? '+' : ''}${r.price_change_pct}%`],
+    ['완료 사이클', `${r.cycles}회`, `익절 ${r.wins} · 손절 ${r.losses}`],
+    ['실현 손익', signed(r.realized), '', r.realized],
+    ['미청산 포지션', r.open_position ? signed(r.open_position.pnl) : '없음', r.open_position ? `${r.open_position.step}단계 · 투입 ${won(r.open_position.cost)}` : '', r.open_position ? r.open_position.pnl : 0],
+    ['총 손익', signed(r.total_pnl), `최대 투입금 대비 ${r.return_on_peak_pct}%`, r.total_pnl],
+    ['최대 투입금', won(r.peak_capital), `최대 단계 도달 ${r.max_step_hits}회`],
+    ['최악의 평가손실', signed(r.worst_unrealized), '보유 중 가장 크게 물렸던 순간', r.worst_unrealized],
+    ['사이클 기간', r.avg_cycle_days != null ? `평균 ${r.avg_cycle_days}일` : '-', r.longest_cycle_days != null ? `최장 ${r.longest_cycle_days}일` : ''],
+  ];
+  $('#btStats').innerHTML = st.map(([k, v, s, c]) => `<div class="card stat"><div class="k">${k}</div><div class="v ${c != null ? cls(c) : ''}">${v}</div><div class="s">${s}</div></div>`).join('')
+    + `<div class="card stat"><div class="k">몇 단계에서 끝났나</div><div class="s" style="margin-top:6px">${Object.entries(r.step_distribution).map(([k, v]) => `${k}단계 ${v}회`).join(' · ')}</div></div>`;
+  $('#btHist tbody').innerHTML = r.history.map(h => `<tr><td>${h.started_at.slice(0, 16).replace('T', ' ')}</td><td>${h.ended_at.slice(0, 16).replace('T', ' ')}</td><td>${h.reason}</td><td>${h.steps}</td><td>${won(h.cost)}</td><td class="${cls(h.profit)}">${signed(h.profit)}</td><td class="${cls(h.profit)}">${h.profit_pct}%</td></tr>`).join('');
+
+  const css = getComputedStyle(document.documentElement), v = n => css.getPropertyValue(n).trim();
+  const labels = r.price_series.map(x => x[0].replace('T', ' '));
+  const idx = t => { t = t.slice(0, 16).replace('T', ' '); let lo = 0, hi = labels.length - 1; while (lo < hi) { const m = (lo + hi) >> 1; labels[m] < t ? lo = m + 1 : hi = m; } return labels[lo]; };
+  const buys = r.events.filter(e => e.type === 'buy').map(e => ({x: idx(e.t), y: e.price, e}));
+  const sells = r.events.filter(e => e.type === 'sell').map(e => ({x: idx(e.t), y: e.price, e}));
+  if (typeof Chart === 'undefined') { $('#btChart').parentElement.innerHTML = '<p class="hint">차트 라이브러리를 불러오지 못했습니다 (인터넷 연결 확인). 수치와 표는 정상입니다.</p>'; return; }
+  if (chart) chart.destroy();
+  chart = new Chart($('#btChart'), {
+    type: 'line',
+    data: {labels, datasets: [
+      {label: '가격', data: r.price_series.map(x => x[1]), borderColor: v('--muted'), borderWidth: 1.5, pointRadius: 0, tension: 0},
+      {label: '매수', type: 'scatter', data: buys, backgroundColor: v('--accent'), borderColor: v('--card'), borderWidth: 1.5, pointStyle: 'triangle', pointRadius: 6},
+      {label: '매도', type: 'scatter', data: sells, backgroundColor: v('--good'), borderColor: v('--card'), borderWidth: 1.5, pointStyle: 'rectRot', pointRadius: 7},
+    ]},
+    options: {
+      maintainAspectRatio: false, animation: false,
+      interaction: {mode: 'nearest', intersect: false},
+      scales: {x: {ticks: {maxTicksLimit: 8, color: v('--muted')}, grid: {display: false}},
+               y: {ticks: {color: v('--muted')}, grid: {color: v('--line')}}},
+      plugins: {legend: {labels: {color: v('--ink2'), usePointStyle: true}},
+        tooltip: {callbacks: {label: c => { const e = c.raw && c.raw.e; if (!e) return `가격 ${num(c.parsed.y)}`;
+          return e.type === 'buy' ? `${e.reason} 매수 ${won(e.krw)} @ ${num(e.price)}` : `${e.reason} 매도 @ ${num(e.price)} (${signed(e.profit)})`; }}}}
+    }
+  });
+}
+
+loadConfig().then(refresh);
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>
