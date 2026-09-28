@@ -16,9 +16,9 @@ from werkzeug.security import check_password_hash
 
 from bot import Bot
 from backtest import fetch_candles, run_backtest, run_sweep
-from exchanges import exchange_class, ExchangeError
+from exchanges import exchange_class, ExchangeError, my_public_ip
 
-VERSION = "1.5"
+VERSION = "1.6"
 BASE = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, static_folder=os.path.join(BASE, "static"))
 bot = Bot()
@@ -170,10 +170,10 @@ def test_keys():
     ex = exchange_class(exch)(pick("access_key"), pick("secret_key"))
     try:
         b = ex.balances()
-        return jsonify({"ok": True, "krw": b.get("KRW", 0),
+        return jsonify({"ok": True, "krw": b.get("KRW", 0), "ip": my_public_ip(),
                         "coins": {x["coin"]: b.get(x["coin"], 0) for x in c["coins"]}})
     except Exception as e:
-        return jsonify({"ok": False, "errors": [str(e)]})
+        return jsonify({"ok": False, "errors": [str(e)], "ip": my_public_ip()})
 
 
 @app.post("/api/backtest")

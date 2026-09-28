@@ -326,7 +326,8 @@ $('#btnSave').onclick = async () => {
 $('#btnTest').onclick = async () => {
   $('#testRes').textContent = '확인 중…';
   const r = await api('/api/test-keys', {exchange: $('#g_exchange').value, access_key: $('#g_access_key').value, secret_key: $('#g_secret_key').value});
-  $('#testRes').textContent = r.ok ? `성공 — 원화 ${won(r.krw)}, ` + Object.entries(r.coins).map(([k, v]) => `${k} ${v}`).join(', ') : '실패: ' + r.errors.join(' ') + ' — 키 오타, 권한(잔고 조회), 허용 IP를 확인하세요.';
+  const ipTxt = r.ip ? `  |  이 프로그램의 IP: ${r.ip} (거래소 허용 IP에 이 값을 등록)` : '';
+  $('#testRes').textContent = (r.ok ? `성공 — 원화 ${won(r.krw)}, ` + Object.entries(r.coins).map(([k, v]) => `${k} ${v}`).join(', ') : '실패: ' + r.errors.join(' ') + ' — 키 오타, 권한(잔고 조회), 허용 IP를 확인하세요.') + ipTxt;
   if (r.ok) $('#testRes').textContent += '  ※ 확인만 한 것이니 꼭 [설정 저장]을 누르세요.';
 };
 

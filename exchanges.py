@@ -15,8 +15,27 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode, unquote
 
+import socket
+
 import jwt
 import requests
+import urllib3.util.connection as _urllib3_conn
+
+# 거래소 API 허용 IP는 보통 IPv4(예: 121.134.x.x)로 등록합니다.
+# PC가 IPv6로 접속하면 등록한 IP와 달라 "IP not allowed" 가 나므로 항상 IPv4로만 접속합니다.
+_urllib3_conn.allowed_gai_family = lambda: socket.AF_INET
+
+
+def my_public_ip():
+    """이 프로그램이 인터넷에 나갈 때 쓰는 공인 IP (거래소에 등록해야 하는 값)"""
+    for url in ("https://api.ipify.org", "https://checkip.amazonaws.com", "https://ifconfig.me/ip"):
+        try:
+            ip = requests.get(url, timeout=5).text.strip()
+            if ip and len(ip) < 50:
+                return ip
+        except requests.RequestException:
+            continue
+    return None
 
 TIMEOUT = 10
 
