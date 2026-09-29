@@ -15,10 +15,10 @@ from flask import Flask, jsonify, request, send_from_directory, session, redirec
 from werkzeug.security import check_password_hash
 
 from bot import Bot
-from backtest import fetch_candles, run_backtest, run_sweep
+from backtest import fetch_candles, run_backtest, run_sweep, run_optimize
 from exchanges import exchange_class, ExchangeError, my_public_ip
 
-VERSION = "1.7"
+VERSION = "1.8"
 BASE = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, static_folder=os.path.join(BASE, "static"))
 bot = Bot()
@@ -204,6 +204,47 @@ def backtest():
             r["coin"] = coin
             r["config"] = {k: v for k, v in cfg.items() if k not in ("access_key", "secret_key", "telegram_token", "coins")}
             bt_state["result"] = r
+            bt_state["progress"] = "완료"
+        except Exception as e:
+            bt_state["error"] = str(e)
+            bt_state["progress"] = "실패"
+        finally:
+            bt_state["running"] = False
+
+    threading.Thread(target=job, daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.post("/api/optimize")
+def optimize():
+    if bt_state["running"]:
+        return jsonify({"ok": False, "errors": ["백테스트가 이미 진행 중입니다."]})
+    body = request.get_json(force=True) or {}
+    try:
+        capital = int(float(body.get("capital", 600000)))
+        split = int(body.get("split", 1))
+        days = int(body.get("days", 730))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "errors": ["입력값이 올바르지 않습니다."]})
+    coins = [c for c in (body.get("coins") or ["BTC", "ETH", "XRP", "SOL"]) if isinstance(c, str)][:6]
+    if capital < 30000 or not (1 <= split <= len(coins)):
+        return jsonify({"ok": False, "errors": ["자본은 3만 원 이상, 나눌 코인 수는 1~코인 개수 사이여야 합니다."]})
+    base = {**bot.cfg, **(bot.cfg["coins"][0] if bot.cfg["coins"] else {})}
+
+    def job():
+        bt_state.update(running=True, progress="시세 수집 중…", result=None, error="")
+        try:
+            ex = exchange_class(base["exchange"])()
+            data = {}
+            for c in coins:
+                data[c] = fetch_candles(ex, f"KRW-{c}", days,
+                                        progress=lambda n, c=c: bt_state.update(progress=f"{c} 시세 {n:,}개 수집"))
+            data = {c: v for c, v in data.items() if len(v) > 200}
+            if not data:
+                raise ExchangeError("시세 데이터를 받지 못했습니다.")
+            r = run_optimize(data, base, capital, min(split, len(data)),
+                             progress=lambda msg: bt_state.update(progress=msg))
+            bt_state["result"] = {"kind": "optimize", "days": days, **r}
             bt_state["progress"] = "완료"
         except Exception as e:
             bt_state["error"] = str(e)

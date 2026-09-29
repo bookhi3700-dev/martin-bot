@@ -58,7 +58,7 @@ def fetch_candles(ex, market, days=365, unit=60, progress=None):
     return [r for r in data if r["t"] >= cutoff]
 
 
-def run_backtest(candles, cfg, detail=True):
+def run_backtest(candles, cfg, detail=True, mid_index=None):
     fee = cfg.get("fee_pct", 0.05) / 100
     slip = cfg.get("slippage_pct", 0.0) / 100
     maxs = int(cfg["max_steps"])
@@ -87,8 +87,11 @@ def run_backtest(candles, cfg, detail=True):
         if detail:
             events.append({"t": when, "type": "sell", "price": price, "profit": res["profit"], "reason": reason})
 
-    for c in candles:
+    mid_equity = None
+    for i, c in enumerate(candles):
         when = c["kst"]
+        if i == mid_index:
+            mid_equity = realized + (pos.volume * c["o"] * (1 - fee) - pos.cost if pos.step else 0)
         if stopped:
             break
         if pos.step == 0:
@@ -182,6 +185,10 @@ def run_backtest(candles, cfg, detail=True):
         "longest_cycle_days": round(max(durations), 1) if durations else None,
         "step_distribution": {str(s): sum(1 for r in cycles if r["steps"] == s) for s in range(1, maxs + 1)},
     }
+    if mid_index is not None:
+        me = mid_equity if mid_equity is not None else total
+        res["first_half_pnl"] = round(me)
+        res["second_half_pnl"] = round(total - me)
     if detail:
         res["history"] = cycles[-100:][::-1]
         res["price_series"] = [[r["kst"][:16], r["c"]] for r in candles[:: max(1, len(candles) // 1500)]]
@@ -224,6 +231,75 @@ def run_sweep(candles, cfg, grid, limit=300):
     out.sort(key=lambda r: r["total_pnl"], reverse=True)
     return {"period": f"{candles[0]['kst'][:10]} ~ {candles[-1]['kst'][:10]}",
             "buy_hold_pct": round((candles[-1]["c"] / candles[0]["o"] - 1) * 100, 2), "rows": out}
+
+
+# ---------------- 추천 설정 찾기 ----------------
+OPT_BASES = [5000, 10000, 20000, 30000]
+OPT_MULTS = [1.5, 2.0]
+OPT_DROPS = ["3", "5", "7", "3,4,5,7,10", "5,5,7,10,15", "5,7,10,12,15"]
+OPT_TPS = [3.0, 5.0, 7.0, 10.0]
+OPT_TRAILS = [0.0, 2.0]
+
+
+def _ladder_total(base, mult, steps):
+    return sum(int(round(base * mult ** i)) for i in range(steps))
+
+
+def optimize_coin(candles, base_cfg, budget, progress=None):
+    """한 코인에 대해 예산(budget) 안에서 가능한 설정 조합을 모두 돌려 결과 목록 반환.
+    안정 점수 = 기간을 반으로 나눴을 때 더 나빴던 쪽의 수익률(예산 대비 %) → 한쪽 기간에만 잘 맞는 설정을 걸러냄"""
+    mid = len(candles) // 2
+    combos = []
+    for base in OPT_BASES:
+        for mult in OPT_MULTS:
+            smax = 0
+            for s in range(1, 11):
+                if _ladder_total(base, mult, s) <= budget:
+                    smax = s
+            for steps in sorted({smax, smax - 1}):
+                if steps < 3:
+                    continue
+                for d, tp, tr in itertools.product(OPT_DROPS, OPT_TPS, OPT_TRAILS):
+                    combos.append((base, mult, steps, d, tp, tr))
+    out = []
+    for n, (base, mult, steps, d, tp, tr) in enumerate(combos):
+        c = dict(base_cfg)
+        c.update(base_amount=base, martin_multiplier=mult, max_steps=steps, drop_steps=d, drop_basis="avg",
+                 take_profit_pct=tp, trailing_enabled=tr > 0, trailing_pct=tr if tr > 0 else 2.0,
+                 stop_loss_enabled=False, auto_restart=True, coin_budget=0)
+        r = run_backtest(candles, c, detail=False, mid_index=mid)
+        h1 = r["first_half_pnl"] / budget * 100
+        h2 = r["second_half_pnl"] / budget * 100
+        out.append({"base_amount": base, "martin_multiplier": mult, "max_steps": steps, "drop_steps": d,
+                    "take_profit_pct": tp, "trailing": tr, "need": _ladder_total(base, mult, steps),
+                    "total_pnl": r["total_pnl"], "total_pct": round(r["total_pnl"] / budget * 100, 1),
+                    "h1_pct": round(h1, 1), "h2_pct": round(h2, 1), "score": round(min(h1, h2), 1),
+                    "worst_unrealized": r["worst_unrealized"],
+                    "worst_pct": round(r["worst_unrealized"] / budget * 100, 1),
+                    "cycles": r["cycles"], "max_step_hits": r["max_step_hits"],
+                    "open_step": r["open_position"]["step"] if r["open_position"] else 0})
+        if progress and n % 20 == 0:
+            progress(n, len(combos))
+    out.sort(key=lambda x: (x["score"], x["total_pnl"]), reverse=True)
+    return out
+
+
+def run_optimize(candles_by_coin, base_cfg, capital, split, progress=None):
+    budget = capital / split
+    per_coin = {}
+    coins = list(candles_by_coin)
+    for i, coin in enumerate(coins):
+        cs = candles_by_coin[coin]
+        rows = optimize_coin(cs, base_cfg, budget,
+                             progress=(lambda n, t, i=i, coin=coin: progress(f"{coin} 계산 중 {n}/{t} ({i + 1}/{len(coins)}번째 코인)")) if progress else None)
+        per_coin[coin] = {"period": f"{cs[0]['kst'][:10]} ~ {cs[-1]['kst'][:10]}",
+                          "buy_hold_pct": round((cs[-1]["c"] / cs[0]["o"] - 1) * 100, 1),
+                          "top": rows[:8], "tested": len(rows)}
+    ranked = sorted((c for c in per_coin if per_coin[c]["top"]), key=lambda c: per_coin[c]["top"][0]["score"], reverse=True)
+    picks = [{"coin": c, **per_coin[c]["top"][0]} for c in ranked[:split]]
+    return {"capital": capital, "split": split, "budget": round(budget), "per_coin": per_coin, "picks": picks,
+            "pick_total_pnl": sum(p["total_pnl"] for p in picks),
+            "pick_worst": sum(p["worst_unrealized"] for p in picks)}
 
 
 if __name__ == "__main__":

@@ -169,7 +169,13 @@ tr.mine td{font-weight:650}
     <div class="card" style="margin-top:12px">
       <div class="row"><label>코인</label><select id="btCoin"></select></div>
       <div class="row"><label>기간</label><select id="btDays"><option value="90">3개월</option><option value="180">6개월</option><option value="365" selected>1년</option><option value="730">2년</option><option value="1095">3년</option></select></div>
-      <div class="row"><label>방식</label><div class="seg" id="btMode"><button type="button" data-m="single" class="act">현재 설정으로 실행</button><button type="button" data-m="sweep">여러 설정 비교</button></div></div>
+      <div class="row"><label>방식</label><div class="seg" id="btMode"><button type="button" data-m="single" class="act">현재 설정으로 실행</button><button type="button" data-m="sweep">여러 설정 비교</button><button type="button" data-m="opt">추천 설정 찾기</button></div></div>
+      <div id="optBox" class="hidden">
+        <div class="row"><label>총 자본 (원)</label><input id="op_capital" type="number" min="30000" step="10000" value="600000"></div>
+        <div class="row"><label>몇 개 코인에 나눌지</label><select id="op_split"><option value="1">1개 (자본 전부 한 코인)</option><option value="2" selected>2개 (코인당 절반)</option><option value="3">3개</option><option value="4">4개 (BTC·ETH·XRP·SOL 모두)</option></select></div>
+        <div class="row"><span></span><div class="hint">BTC·ETH·XRP·SOL 각각에 대해 1단계 금액·배수·단계·하락폭·익절·추적 익절 조합 수백 개를 코인당 예산 안에서 모두 돌립니다.
+          <b>기간을 반으로 나눠 두 구간 모두에서 잘 버틴 설정</b>(안정 점수)을 위로 올립니다. 1~3분 걸립니다. 위 '기간'은 2년 이상을 추천합니다.</div></div>
+      </div>
       <div id="sweepBox" class="hidden">
         <div class="row"><label>단계별 하락폭 후보</label><textarea id="sw_drop" rows="3" placeholder="한 줄에 하나씩&#10;5&#10;5,5,7,10,15"></textarea><div class="hint">한 줄이 한 후보입니다. 예) <code>5</code> = 모든 단계 5% · <code>5,5,7,10,15</code> = 단계마다 다르게</div></div>
         <div class="row"><label>익절 수익률 후보 (%)</label><input id="sw_tp" placeholder="5,10,15"></div>
@@ -188,6 +194,14 @@ tr.mine td{font-weight:650}
       <div class="card"><div class="chartbox"><canvas id="btChart"></canvas></div></div>
       <h2>사이클 기록 (최근 100개)</h2>
       <div class="card tablewrap"><table id="btHist"><thead><tr><th>시작</th><th>종료</th><th>사유</th><th>단계</th><th>투입</th><th>손익</th><th>수익률</th></tr></thead><tbody></tbody></table></div>
+    </div>
+
+    <div id="btOpt" class="hidden">
+      <h2 id="opTitle"></h2>
+      <div class="card" id="opPick"></div>
+      <p class="hint" style="margin-top:10px"><b>안정 점수</b> = 기간 앞쪽 절반과 뒤쪽 절반 중 더 나빴던 쪽의 수익률(코인 예산 대비). 한쪽 시기에만 운 좋게 맞은 설정을 걸러냅니다.
+        <b>최악 평가손실</b>은 가장 크게 물렸던 순간이라, 이 금액을 감당할 수 있는지 꼭 보세요. 행의 [적용]을 누르면 설정 탭에 입력됩니다 (저장해야 반영).</p>
+      <div id="opCoins"></div>
     </div>
 
     <div id="btSweep" class="hidden">
@@ -422,6 +436,9 @@ $('#btMode').querySelectorAll('button').forEach(b => b.onclick = () => {
   btMode = b.dataset.m;
   $('#btMode').querySelectorAll('button').forEach(x => x.classList.toggle('act', x === b));
   $('#sweepBox').classList.toggle('hidden', btMode !== 'sweep');
+  $('#optBox').classList.toggle('hidden', btMode !== 'opt');
+  $('#btCoin').closest('.row').classList.toggle('hidden', btMode === 'opt');
+  if (btMode === 'opt' && +$('#btDays').value < 730) $('#btDays').value = '730';
   swCount();
 });
 const splitList = s => s.split(',').map(x => x.trim()).filter(Boolean);
@@ -443,7 +460,9 @@ $('#btnBt').onclick = async () => {
   showErr($('#btErr'), []);
   const body = {days: +$('#btDays').value, coin: $('#btCoin').value};
   if (btMode === 'sweep') body.grid = readGrid();
-  const r = await api('/api/backtest', body);
+  const r = btMode === 'opt'
+    ? await api('/api/optimize', {days: +$('#btDays').value, capital: +$('#op_capital').value, split: +$('#op_split').value, coins: ['BTC', 'ETH', 'XRP', 'SOL']})
+    : await api('/api/backtest', body);
   if (!r.ok) return showErr($('#btErr'), r.errors);
   $('#btnBt').disabled = true;
   const poll = setInterval(async () => {
@@ -455,9 +474,53 @@ $('#btnBt').onclick = async () => {
     if (!b.result) return;
     $('#btSingle').classList.toggle('hidden', b.result.kind !== 'single');
     $('#btSweep').classList.toggle('hidden', b.result.kind !== 'sweep');
-    b.result.kind === 'sweep' ? renderSweep(b.result) : renderSingle(b.result);
+    $('#btOpt').classList.toggle('hidden', b.result.kind !== 'optimize');
+    if (b.result.kind === 'optimize') renderOpt(b.result);
+    else b.result.kind === 'sweep' ? renderSweep(b.result) : renderSingle(b.result);
   }, 700);
 };
+
+let lastOpt = null;
+const optDesc = x => `1단계 ${won(x.base_amount)} · 배수 ${x.martin_multiplier} · 최대 ${x.max_steps}단계 · 하락폭 ${x.drop_steps}% · 익절 ${x.take_profit_pct}%${x.trailing ? ' + 추적 ' + x.trailing + '%' : ''}`;
+function renderOpt(r) {
+  lastOpt = r;
+  const pc = r.per_coin, anyP = Object.values(pc)[0];
+  $('#opTitle').textContent = `추천 결과 · 자본 ${won(r.capital)} · ${r.split}개 코인 (코인당 ${won(r.budget)}) · ${anyP ? anyP.period : ''}`;
+  $('#opPick').innerHTML = `<h3 style="margin-bottom:8px">추천 조합</h3>` + r.picks.map(p => `<div style="margin:6px 0"><b>${esc(p.coin)}</b> — ${optDesc(p)}<br>
+      <span class="hint">필요 자금 ${won(p.need)} · 총 손익 <span class="${cls(p.total_pnl)}">${signed(p.total_pnl)} (${pct(p.total_pct, 1)})</span> · 안정 점수 ${pct(p.score, 1)} (전반 ${pct(p.h1_pct, 1)} / 후반 ${pct(p.h2_pct, 1)}) · 최악 평가손실 <span class="neg">${signed(p.worst_unrealized)}</span> · 사이클 ${p.cycles}회</span></div>`).join('')
+    + `<p style="margin:10px 0 0">합계 총 손익 <b class="${cls(r.pick_total_pnl)}">${signed(r.pick_total_pnl)}</b> · 최악의 경우 동시 평가손실 약 <b class="neg">${signed(r.pick_worst)}</b></p>
+       <p style="margin:10px 0 0"><button class="primary" id="opApplyAll">추천 조합 전체 적용</button> <span class="hint">추천 코인은 켜고, 나머지 코인은 끄고, 코인별·전체 투입 한도까지 설정 탭에 입력합니다.</span></p>`;
+  $('#opApplyAll').onclick = () => applyOpt(r.picks, true);
+  $('#opCoins').innerHTML = Object.entries(pc).map(([coin, v]) => `<h2>${esc(coin)} <span class="hint">그냥 보유했다면 ${pct(v.buy_hold_pct, 1)} · ${v.tested}개 조합 시험</span></h2>
+    <div class="card tablewrap"><table><thead><tr><th>설정</th><th>필요 자금</th><th>안정 점수</th><th>전반 / 후반</th><th>총 손익</th><th>최악 평가손실</th><th>사이클</th><th>최대단계 도달</th><th></th></tr></thead><tbody>
+    ${v.top.map((x, i) => `<tr><td style="text-align:left;white-space:normal;min-width:260px">${optDesc(x)}</td><td>${won(x.need)}</td><td class="${cls(x.score)}">${pct(x.score, 1)}</td>
+      <td>${pct(x.h1_pct, 1)} / ${pct(x.h2_pct, 1)}</td><td class="${cls(x.total_pnl)}">${signed(x.total_pnl)}</td><td class="neg">${signed(x.worst_unrealized)} (${x.worst_pct}%)</td>
+      <td>${x.cycles}</td><td>${x.max_step_hits}회</td><td><button class="small" data-opc="${esc(coin)}" data-opi="${i}">적용</button></td></tr>`).join('') || '<tr><td colspan="9" class="hint">예산 안에서 가능한 조합이 없습니다</td></tr>'}
+    </tbody></table></div>`).join('');
+  document.querySelectorAll('[data-opc]').forEach(b => b.onclick = () => applyOpt([{coin: b.dataset.opc, ...lastOpt.per_coin[b.dataset.opc].top[+b.dataset.opi]}], false));
+}
+function applyOpt(picks, all) {
+  const r = lastOpt;
+  const msg = picks.map(p => `${p.coin}: ${optDesc(p)}`).join('\n');
+  if (!confirm(`설정 탭에 입력할까요?\n\n${msg}\n\n코인별 투입 한도 ${won(r.budget)}${all ? `, 전체 투입 한도 ${won(r.capital)}` : ''}\n입력 후 [설정 저장]을 눌러야 반영됩니다.`)) return;
+  for (const p of picks) {
+    let d = document.querySelector(`.coinedit[data-coin="${p.coin}"]`);
+    if (!d) { d = coinEditor({...(cfg.coins[0] || {}), coin: p.coin, enabled: true}, false); $('#coinEditors').appendChild(d); }
+    const set = (k, v) => { const el = d.querySelector(`[data-k="${k}"]`); if (!el) return; if (el.type === 'checkbox') el.checked = v; else el.value = v; };
+    set('enabled', true); set('base_amount', p.base_amount); set('martin_multiplier', p.martin_multiplier); set('max_steps', p.max_steps);
+    set('drop_steps', p.drop_steps); set('drop_basis', 'avg'); set('take_profit_pct', p.take_profit_pct);
+    set('trailing_enabled', !!p.trailing); if (p.trailing) set('trailing_pct', p.trailing);
+    set('auto_restart', true); set('stop_loss_enabled', false); set('coin_budget', r.budget); set('limit_action', 'hold');
+    updateLadder(d);
+  }
+  if (all) {
+    const keep = new Set(picks.map(p => p.coin));
+    document.querySelectorAll('.coinedit').forEach(d => { if (!keep.has(d.dataset.coin)) { const el = d.querySelector('[data-k="enabled"]'); el.checked = false; updateLadder(d); } });
+    $('#g_total_budget').value = r.capital; updateBudgetHint();
+  }
+  document.querySelector('nav button[data-tab="settings"]').click();
+  $('#cfgOk').textContent = '추천 설정이 입력됐습니다 — [설정 저장]을 눌러주세요';
+}
 
 function renderSingle(r) {
   const vsHold = r.return_on_peak_pct - r.buy_hold_pct;
