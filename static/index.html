@@ -107,13 +107,15 @@ section .seg button.act{background:var(--dom)}
 header{background:var(--head);box-shadow:0 1px 0 var(--line);border-bottom:none;padding:10px 20px}
 header h1{font-size:18px;font-weight:750;letter-spacing:-.02em;display:flex;align-items:center;gap:8px}
 header h1::before{content:"";width:12px;height:12px;border-radius:3px;background:linear-gradient(135deg,var(--martin) 50%,var(--grid) 50%)}
+.pill.martinp{background:color-mix(in srgb,var(--martin) 16%,transparent);color:var(--martin)}
 .pill.gridp{background:color-mix(in srgb,var(--grid) 16%,transparent);color:var(--grid)}
 nav{gap:10px;padding:12px 20px 0;flex-wrap:wrap}
-nav .grp{display:flex;align-items:center;gap:2px;padding:4px;border-radius:12px;background:var(--navbg);--c:var(--martin)}
+nav .grp{display:flex;align-items:center;gap:2px;padding:4px;border-radius:12px;--c:var(--martin);
+  background:color-mix(in srgb,var(--c) 9%,var(--navbg));border:1.5px solid color-mix(in srgb,var(--c) 45%,transparent)}
 nav .grp.g{--c:var(--grid)}
 nav .grp .gl{display:flex;align-items:center;gap:6px;padding:0 10px 0 8px;font-size:12px;font-weight:650;color:var(--c)}
 nav .grp .gl::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--c)}
-nav .grp button{border:none;border-radius:9px;padding:7px 15px;color:var(--ink2);font-weight:550;background:none}
+nav .grp button{border:none;border-radius:9px;padding:7px 15px;color:color-mix(in srgb,var(--c) 55%,var(--ink2));font-weight:550;background:none}
 nav .grp button:hover{background:color-mix(in srgb,var(--c) 10%,transparent);color:var(--ink)}
 nav .grp button.act{background:var(--c);color:#fff;font-weight:650;box-shadow:0 1px 2px color-mix(in srgb,var(--c) 40%,transparent)}
 nav .grp button:focus-visible,button:focus-visible{outline:2px solid var(--c,var(--accent));outline-offset:2px}
@@ -549,7 +551,7 @@ function coinCard(c, running) {
   else if (c.paused) chip = '<span class="pill live">일시정지</span>';
   else if (p.trail_armed) chip = '<span class="pill on">추적 익절 중</span>';
   else if (c.budget_blocked) chip = '<span class="pill warn">한도 보류</span>';
-  else if (running) chip = '<span class="pill on">매매 중</span>';
+  else if (running) chip = '<span class="pill martinp">매매 중</span>';
   const dots = Array.from({length: c.max_steps}, (_, i) => `<span class="${i < p.step ? (p.step >= c.max_steps ? 'full' : 'f') : ''}"></span>`).join('');
   const dist = x => price && x ? ` <small>(${pct((x / price - 1) * 100)})</small>` : '';
   let exit = '';
@@ -582,8 +584,10 @@ const openDetails = new Set();
 async function refresh() {
   const s = await api('/api/status'), t = s.total;
   $('#btnLogout').classList.toggle('hidden', !s.auth);
-  $('#runPill').textContent = s.running ? 'Martin 실행 중' : 'Martin 정지'; $('#runPill').className = 'pill' + (s.running ? ' on' : '');
-  $('#mRunPill').textContent = s.running ? '실행 중' : '정지'; $('#mRunPill').className = 'pill' + (s.running ? ' on' : '');
+  const mCoins = s.coins.filter(c => c.enabled && !c.paused).map(c => c.coin);
+  $('#runPill').textContent = s.running ? `Martin 실행 중 · ${mCoins.join(', ') || '켜진 코인 없음'}` : 'Martin 정지';
+  $('#runPill').className = 'pill' + (s.running ? ' martinp' : '');
+  $('#mRunPill').textContent = s.running ? '실행 중' : '정지'; $('#mRunPill').className = 'pill' + (s.running ? ' martinp' : '');
   mRunning = s.running; updateAllBtns();
   $('#modePill').textContent = s.mode === 'live' ? '실전' : '모의투자'; $('#modePill').className = 'pill' + (s.mode === 'live' ? ' live' : '');
   $('#exPill').textContent = EXN[s.exchange] || s.exchange;
@@ -1023,7 +1027,7 @@ async function gRefresh() {
   gRunning = s.running || s.stopping; updateAllBtns();
   if ($('#tab-grid').classList.contains('hidden')) return;
   $('#gRunPill').textContent = s.stopping ? '주문 취소 중…' : s.running ? '실행 중' : '정지';
-  $('#gRunPill').className = 'pill' + (s.running ? ' on' : s.stopping ? ' warn' : '');
+  $('#gRunPill').className = 'pill' + (s.running ? ' gridp' : s.stopping ? ' warn' : '');
   $('#gModePill').textContent = s.mode === 'live' ? '실전' : '모의투자'; $('#gModePill').className = 'pill' + (s.mode === 'live' ? ' live' : '');
   $('#gExPill').textContent = EXN[s.exchange] || s.exchange;
   $('#gStart').disabled = s.running || s.stopping; $('#gStop').disabled = !s.running;
