@@ -317,7 +317,8 @@ def grid_stop():
 
 @app.post("/api/grid/clear")
 def grid_clear():
-    errs = grid.clear((request.get_json(force=True) or {}).get("action", ""))
+    body = request.get_json(force=True) or {}
+    errs = grid.clear(body.get("coin", ""), body.get("action", ""))
     return jsonify({"ok": not errs, "errors": errs})
 
 
@@ -327,7 +328,7 @@ def grid_suggest():
     body = request.get_json(force=True) or {}
     days = max(7, min(365, int(body.get("days", 30))))
     exch = body.get("exchange") or grid.cfg["exchange"]
-    coin = (body.get("coin") or grid.cfg["coin"]).upper()
+    coin = (body.get("coin") or grid.cfg["coins"][0]["coin"]).upper()
     try:
         ex = exchange_class(exch)()
         cs = fetch_candles(ex, f"KRW-{coin}", days)
@@ -349,7 +350,7 @@ def grid_backtest():
         return jsonify({"ok": False, "errors": ["그리드 백테스트가 이미 진행 중입니다."]})
     body = request.get_json(force=True) or {}
     days = int(body.get("days", 180))
-    cfg = dict(grid.cfg)
+    cfg = grid.coin_cfg((body.get("coin") or grid.cfg["coins"][0]["coin"]).upper())
     for k in ("lower", "upper", "fee_pct", "gap_pct"):
         if body.get(k) not in (None, ""):
             cfg[k] = float(body[k])

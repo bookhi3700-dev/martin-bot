@@ -29,6 +29,11 @@ GRID_DEFAULTS = {
     "stop_loss_price": 0.0,
 }
 
+# 공통 설정(거래소·계좌 단위) / 코인별 설정 구분
+GLOBAL_KEYS = ("exchange", "mode", "access_key", "secret_key", "fee_pct", "check_interval_sec")
+GRID_GLOBAL_DEFAULTS = {k: GRID_DEFAULTS[k] for k in GLOBAL_KEYS}
+GRID_COIN_DEFAULTS = {"enabled": True, **{k: v for k, v in GRID_DEFAULTS.items() if k not in GLOBAL_KEYS}}
+
 MAX_GRIDS = 100
 
 
@@ -129,10 +134,10 @@ def conflict_with_martin(grid_cfg, martin_cfg, from_martin=False):
     coin = (grid_cfg.get("coin") or "").upper()
     if coin in {c["coin"] for c in martin_cfg.get("coins", [])}:
         if from_martin:
-            return (f"{coin} 은(는) 그리드가 같은 거래소에서 실전 매매하는 코인이라 Martin Bot에 넣을 수 없습니다. "
+            return (f"{coin} 은(는) Grid가 같은 거래소에서 실전 매매하는 코인이라 Martin Bot에 넣을 수 없습니다. "
                     f"두 봇이 같은 코인을 쓰면 서로의 체결이 섞입니다.")
         return (f"{coin} 은(는) Martin Bot이 같은 거래소에서 실전 매매하는 코인입니다. 두 봇이 같은 코인을 쓰면 서로의 체결이 섞입니다. "
-                f"Martin Bot 설정에서 {coin} 을(를) 먼저 정리·삭제한 뒤 그리드를 실전으로 시작하세요.")
+                f"Martin Bot 설정에서 {coin} 을(를) 먼저 정리·삭제한 뒤 Grid를 실전으로 시작하세요.")
     return None
 
 

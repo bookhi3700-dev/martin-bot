@@ -147,6 +147,12 @@ input[readonly]{background:var(--chip)}
 .logs{background:var(--chip);border-color:var(--line)}
 .gbar,.mbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-top:3px solid var(--dom)}
 .gbar h3,.mbar h3{font-size:18px;font-weight:750;color:var(--dom);letter-spacing:-.01em}
+.gcoin{border-left:4px solid var(--cc);margin-bottom:12px}
+.gcoin .cdot{width:10px;height:10px;border-radius:50%;background:var(--cc);flex:none}
+.mini{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;margin:10px 0 4px}
+.mini > div{background:var(--chip);border-radius:9px;padding:8px 11px;display:flex;flex-direction:column;gap:1px}
+.mini .k{font-size:12px;color:var(--muted)} .mini .v{font-weight:650;font-variant-numeric:tabular-nums} .mini small{color:var(--muted);font-weight:500}
+.clearrow{margin:10px 0 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 header .allbtn{background:linear-gradient(90deg,var(--martin),var(--grid));border:none}
 @media (max-width:600px){ nav{overflow-x:auto;flex-wrap:nowrap} nav .grp{flex:none} nav .grp .gl{display:none} fieldset > .row,fieldset > details{margin:0 12px} }
 @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) button.primary, :root:not([data-theme="light"]) nav .grp button.act{color:#0f1318} }
@@ -301,19 +307,12 @@ nav .grp.g .gl{padding-right:4px}
     <div id="gAlerts"></div>
     <div class="grid" id="gTotals" style="margin-top:12px"></div>
 
-    <h2>격자 현황</h2>
-    <div class="card">
-      <div class="hint" style="margin-bottom:6px">위가 높은 가격입니다. <b>매수 대기</b> = 그 칸 아래 가격에 지정가 매수가 걸린 상태 · <b>매도 대기</b> = 사둔 코인을 위 가격에 지정가 매도로 걸어둔 상태</div>
-      <div class="tablewrap"><table id="gCells"><thead><tr><th>칸</th><th>매수가</th><th>매도가</th><th>상태</th><th>보유 수량</th><th>매수 금액</th></tr></thead><tbody></tbody></table></div>
-      <details id="gClearBox"><summary>정리 (중지 상태에서만)</summary>
-        <p class="hint">범위·칸 수를 바꾸려면 보유 중인 칸이 없어야 합니다.</p>
-        <p><button class="danger small" id="gClearSell">보유분 시장가 매도 후 격자 비우기</button> <span class="hint">손익 확정</span></p>
-        <p><button class="small" id="gClearForget">기록만 비우기</button> <span class="hint">거래소 잔고는 그대로 — 거래소 앱에서 직접 정리했을 때만 사용</span></p>
-      </details>
-    </div>
+    <h2>코인별 격자</h2>
+    <p class="hint" style="margin:-4px 0 10px">위가 높은 가격입니다. <b>매수 대기</b> = 그 칸 사는 가격에 지정가 매수가 걸린 상태 · <b>매도 대기</b> = 산 코인을 파는 가격에 지정가 매도로 걸어둔 상태</p>
+    <div id="gCoins"></div>
 
-    <h2>완료된 매매 (최근 20개)</h2>
-    <div class="card tablewrap"><table id="gHist"><thead><tr><th>시각</th><th>칸</th><th>매수가</th><th>매도가</th><th>투입</th><th>수익</th></tr></thead><tbody></tbody></table></div>
+    <h2>완료된 매매 (최근 30개)</h2>
+    <div class="card tablewrap"><table id="gHist"><thead><tr><th>시각</th><th>코인</th><th>칸</th><th>매수가</th><th>매도가</th><th>투입</th><th>수익</th></tr></thead><tbody></tbody></table></div>
 
     <h2>Grid 로그</h2>
     <div class="card logs" id="gLogs"></div>
@@ -321,45 +320,32 @@ nav .grp.g .gl{padding-right:4px}
     <p style="margin-top:14px"><button type="button" id="gGoSet">Set up에서 설정 바꾸기</button></p>
   </section>
 
-  <!-- ================= 그리드 설정 ================= -->
+  <!-- ================= Grid Set up ================= -->
   <section id="tab-gridset" class="hidden">
-    <div class="note">그리드는 <b>"이 가격에 사서, 칸 간격만큼 오르면 판다"</b>를 계단처럼 여러 칸 깔아두는 방식입니다.
+    <div class="note">Grid는 <b>"이 가격에 사서, 칸 간격만큼 오르면 판다"</b>를 계단처럼 여러 칸 깔아두는 방식입니다.
       예) 하단 1억 4천만 원 · 간격 1% · 13칸 · 칸당 10만 원 → 1억 4천만 원부터 1%씩 내려갈 때마다 10만 원어치를 사고, 산 가격에서 1% 오르면 팝니다.</div>
 
-    <fieldset style="margin-top:12px"><legend>거래소·코인</legend>
+    <fieldset style="margin-top:12px"><legend>공통 — 거래소·계좌</legend>
       <div class="row"><label>실행 모드</label><select id="gc_mode"><option value="paper">모의투자 (실제 주문 안 함)</option><option value="live">실전 (실제 주문)</option></select></div>
-      <div class="row"><label>거래소</label><select id="gc_exchange"><option value="coinone">코인원</option><option value="upbit">업비트</option><option value="bithumb">빗썸</option></select></div>
-      <div class="row"><label>코인</label><input id="gc_coin" placeholder="BTC"><div class="hint" id="gCoinHint"></div></div>
-    </fieldset>
-
-    <fieldset><legend>칸 만들기</legend>
-      <div class="row"><label>범위 정하는 방식</label><select id="gc_range_mode">
-        <option value="gap">간격 %로 — 하단 + 간격 + 칸 수 → 상단 자동 (추천)</option>
-        <option value="range">하단·상단 직접 입력</option></select></div>
-      <div class="row"><label>하단 가격 (원)</label><input id="gc_lower" type="number" step="10000"><div class="hint">가장 아래 칸에서 사는 가격. 이보다 더 떨어지면 더 사지 않습니다</div></div>
-      <div class="row" data-mode="gap"><label>칸 간격 (%)</label><input id="gc_gap_pct" type="number" min="0.2" max="50" step="0.1"><div class="hint">산 가격에서 이만큼 오르면 팝니다. 다음 칸은 이만큼 아래에서 삽니다</div></div>
-      <div class="row"><label>칸당 매수 금액 (원)</label><input id="gc_krw_per_grid" type="number" min="6000" step="10000"></div>
-      <div class="row" data-mode="gap"><label>칸 수 정하기</label><select id="gCountBy"><option value="count">칸 수를 직접 입력</option><option value="budget">총 예산으로 계산 (예산 ÷ 칸당 금액)</option></select></div>
-      <div class="row" data-countby="budget"><label>총 예산 (원)</label><input id="gBudget" type="number" min="0" step="100000"><div class="hint" id="gBudgetHint"></div></div>
-      <div class="row"><label>칸 수</label><input id="gc_grids" type="number" min="2" max="100" step="1"></div>
-      <div class="row"><label>상단 가격 (원)</label><input id="gc_upper" type="number" step="10000"><div class="hint" id="gUpperHint"></div></div>
-      <div class="row" data-mode="range"><label>간격 방식</label><select id="gc_spacing"><option value="geom">등비 — 칸마다 같은 % (추천)</option><option value="arith">등간격 — 칸마다 같은 원</option></select></div>
-      <div class="row"><span></span><div><select id="gSugDays" class="auto"><option value="14">최근 2주</option><option value="30" selected>최근 30일</option><option value="60">최근 60일</option><option value="90">최근 90일</option></select>
-        <button type="button" class="small" id="gSuggest">최근 저가·고가로 채우기</button> <span class="hint" id="gSugRes"></span></div></div>
+      <div class="row"><label>거래소</label><select id="gc_exchange"><option value="coinone">코인원</option><option value="upbit">업비트</option><option value="bithumb">빗썸</option></select><div class="hint" id="gExHint"></div></div>
       <div class="row"><label>수수료 (%)</label><input id="gc_fee_pct" type="number" min="0" step="0.01"><div class="hint">지정가(메이커) 기준 본인 수수료율. 거래소 앱에서 확인하세요 — 칸 수익 계산·모의투자·백테스트에 씁니다</div></div>
-      <div class="row"><span></span><div class="note" id="gPreview"></div></div>
-      <details id="gLadderBox"><summary>칸별 사는 가격 · 파는 가격 미리보기</summary>
-        <div class="tablewrap"><table id="gLadder"><thead><tr><th>칸</th><th>사는 가격</th><th>파는 가격</th><th>칸 수익 (수수료 후)</th></tr></thead><tbody></tbody></table></div>
-      </details>
+      <div class="row"><label>시세 확인 주기 (초)</label><input id="gc_check_interval_sec" type="number" min="3" step="1"></div>
+      <div class="row"><label>Grid용 Access Key</label><input id="gc_access_key" autocomplete="off" placeholder="비우면 Martin Bot 설정의 키 사용 (같은 거래소일 때)"></div>
+      <div class="row"><label>Grid용 Secret Key</label><input id="gc_secret_key" type="password" autocomplete="off"><div class="hint">따로 발급하면 거래소 앱에서 어느 봇 주문인지 구분하기 쉽습니다. 출금 권한은 끄세요.</div></div>
     </fieldset>
 
-    <fieldset><legend>안전장치·기타</legend>
-      <div class="row"><label>손절 사용</label><div><input type="checkbox" id="gc_stop_loss_enabled"> <span class="hint">아래 가격 밑으로 떨어지면 그리드 주문을 모두 취소하고 보유분을 시장가로 팔고 멈춥니다</span></div></div>
-      <div class="row"><label>손절 가격 (원)</label><input id="gc_stop_loss_price" type="number" step="10000"><div class="hint">하단 가격보다 낮게</div></div>
-      <div class="row"><label>시세 확인 주기 (초)</label><input id="gc_check_interval_sec" type="number" min="3" step="1"></div>
-      <div class="row"><label>그리드용 Access Key</label><input id="gc_access_key" autocomplete="off" placeholder="비우면 Martin Bot 설정의 키 사용 (같은 거래소일 때)"></div>
-      <div class="row"><label>그리드용 Secret Key</label><input id="gc_secret_key" type="password" autocomplete="off"><div class="hint">따로 발급하면 거래소 앱에서 어느 봇 주문인지 구분하기 쉽습니다. 출금 권한은 끄세요.</div></div>
-    </fieldset>
+    <div class="coinzone">
+      <h2>코인별 격자</h2>
+      <span class="hint">코인 이름을 누르면 펼쳐집니다. 코인마다 범위·간격·금액을 따로 정합니다.</span>
+      <div id="gEditors"></div>
+      <div class="card" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <span class="hint">코인 추가</span>
+        <select id="gAddSel" class="auto"><option>BTC</option><option>ETH</option><option>XRP</option><option>SOL</option><option value="_">직접 입력…</option></select>
+        <input id="gAddTxt" class="hidden" placeholder="예: DOGE" style="width:110px">
+        <button type="button" id="gAddBtn">추가</button>
+      </div>
+    </div>
+
     <div class="stick">
       <button type="button" class="primary" id="gSave">Set up 저장</button>
       <span id="gCfgOk" class="hint"></span>
@@ -369,6 +355,7 @@ nav .grp.g .gl{padding-right:4px}
     <h2>Grid 백테스트</h2>
     <div class="note">위에 입력된 값(저장 전이어도)으로 과거 1시간봉을 시뮬레이션합니다. 지정가는 주문 가격 그대로 체결, 수수료 반영. 한 시간봉 안에서 사고 바로 파는 건 세지 않는 보수적 계산입니다.</div>
     <div class="card" style="margin-top:10px">
+      <div class="row"><label>코인</label><select id="gBtCoin"></select><div class="hint">위 코인별 칸에 입력된 값으로 돌립니다</div></div>
       <div class="row"><label>기간</label><select id="gBtDays"><option value="30">1개월</option><option value="90">3개월</option><option value="180" selected>6개월</option><option value="365">1년</option></select></div>
       <div class="row"><label id="gBtCountsLabel">비교 후보</label><input id="gBtCounts"><div class="hint" id="gBtCountsHint"></div></div>
       <div class="row"><span></span><div><button class="primary" id="gBtRun">이 설정으로 백테스트</button> <button id="gBtSweep">후보 비교</button> <span id="gBtProg" class="hint"></span></div></div>
@@ -409,7 +396,7 @@ document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
   window.scrollTo({top: 0});
   ['dash', 'settings', 'bt', 'grid', 'gridset'].forEach(t => $('#tab-' + t).classList.toggle('hidden', t !== b.dataset.tab));
   if (b.dataset.tab === 'grid') gRefresh();
-  if (b.dataset.tab === 'gridset') gSync();
+  if (b.dataset.tab === 'gridset') gSyncAll();
 });
 
 // ---------------- 설정 ----------------
@@ -449,8 +436,8 @@ function coinEditor(c, open) {
     else inp = `<input data-k="${k}" type="${type}" ${step ? `step="${step}"` : ''} value="${esc(c[k])}">` + (hint ? `<div class="hint">${hint}</div>` : '');
     return `<div class="row"><label>${label}</label>${inp}</div>`;
   }).join('');
-  d.innerHTML = `<summary><span class="cdot"></span><span class="ctag">${esc(c.coin)}</span><span class="hint" data-sum></span><span class="spacer"></span></summary>
-    <div class="body">${f}
+  d.innerHTML = `<summary><span class="cdot"></span><span class="ctag">${esc(c.coin)}</span><span class="hint" data-sum></span><span class="spacer"></span><span data-mwbadge></span></summary>
+    <div class="body"><div data-mwarn></div>${f}
       <div class="tablewrap" style="margin-top:6px"><table data-ladder><thead><tr><th>단계</th><th>하락폭</th><th>매수금액</th><th>누적</th></tr></thead><tbody></tbody></table></div>
       <p style="margin:10px 0 0"><button type="button" class="danger small" data-del>이 코인 삭제</button></p>
     </div>`;
@@ -480,6 +467,7 @@ function updateLadder(d) {
   const cb = +o.coin_budget;
   d.querySelector('[data-sum]').textContent = `${o.enabled ? '' : '(꺼짐) '}최대 ${won(total)} · 익절 ${o.take_profit_pct}%${o.trailing_enabled ? ' + 추적' : ''}${cb > 0 ? ` · 한도 ${won(cb)}` : ''}`;
   d.querySelectorAll('[data-ladder] tbody tr').forEach((tr, i) => { if (cb > 0 && rows[i].cum > cb) { tr.style.opacity = .45; tr.title = '코인 한도를 넘어 실행되지 않는 단계'; } });
+  if (typeof mWarn === 'function') mWarn(d);
   updateBudgetHint();
 }
 function updateBudgetHint() {
@@ -499,6 +487,7 @@ async function loadConfig() {
   cfg.coins.forEach((c, i) => box.appendChild(coinEditor(c, cfg.coins.length === 1)));
   $('#btCoin').innerHTML = cfg.coins.map(c => `<option>${esc(c.coin)}</option>`).join('');
   updateBudgetHint();
+  if (typeof mWarnAll === 'function') { mWarnAll(); gEds().forEach(gSyncEd); }
 }
 $('#addCoinSel').onchange = () => $('#addCoinTxt').classList.toggle('hidden', $('#addCoinSel').value !== '_');
 $('#btnAddCoin').onclick = () => {
@@ -541,7 +530,7 @@ $('#allStart').onclick = async () => {
   const g = typeof gcfg !== 'undefined' ? gcfg : {};
   const lines = [];
   if (!mRunning) lines.push(`Martin — ${cfg.mode === 'live' ? '실전' : '모의투자'} · ${EXN[cfg.exchange]} · ${on || '켜진 코인 없음'}`);
-  if (!gRunning) lines.push(`Grid — ${g.mode === 'live' ? '실전' : '모의투자'} · ${EXN[g.exchange] || ''} · ${g.coin || ''} ${num(+g.lower)} ~ ${num(+g.upper)}`);
+  if (!gRunning) lines.push(`Grid — ${g.mode === 'live' ? '실전' : '모의투자'} · ${EXN[g.exchange] || ''} · ${(g.coins || []).filter(c => c.enabled).map(c => c.coin).join(', ') || '켜진 코인 없음'}`);
   if (!lines.length) return;
   if (!confirm(`다음을 시작합니다.\n\n${lines.join('\n')}\n\n계속할까요?`)) return;
   const r = await api('/api/all/start', {}); showErr($('#globalErr'), r.errors); refresh(); gRefresh();
@@ -572,6 +561,7 @@ function coinCard(c, running) {
     <div class="coinhead"><h3>${esc(c.coin)}</h3>${chip}<span class="spacer"></span><span class="hint">현재가</span><b>${num(price)}</b></div>
     ${c.paused ? `<div class="alert bad">⛔ ${esc(c.paused)}<br>거래소 앱에서 체결 여부를 확인하고, 봇 기록과 다르면 '기록 초기화' 후 재개하세요. <button class="small" data-resume="${c.coin}">재개</button></div>` : ''}
     ${c.budget_blocked ? `<div class="alert warn">투입 한도에 걸려 추가 매수를 멈춘 상태입니다. 익절가에 오면 매도합니다.</div>` : ''}
+    ${(() => { const w = typeof gridOverlap === 'function' ? gridOverlap(c.coin, cfg.exchange, cfg.mode) : null; return w ? `<div class="alert ${w.block ? 'bad' : 'warn'}">⚠ ${w.text}</div>` : ''; })()}
     <div class="hint">진행 ${p.step} / ${c.max_steps}단계${p.step ? ` · ${esc(p.cycle_started_at)} 시작` : ''}</div>
     <div class="dots">${dots}</div>
     <div class="kv">
@@ -784,169 +774,286 @@ function renderSweep(r) {
 loadConfig().then(refresh);
 setInterval(refresh, 3000);
 
-// ================= 그리드 =================
-const GCF = ['mode', 'exchange', 'coin', 'range_mode', 'gap_pct', 'lower', 'upper', 'grids', 'spacing', 'krw_per_grid', 'fee_pct', 'stop_loss_enabled', 'stop_loss_price', 'check_interval_sec', 'access_key', 'secret_key'];
-let gcfg = {}, gstat = null, gLastTick = 0;
-const gTick = () => (gstat && gstat.minfo && gstat.minfo.tick) || gLastTick || 0;
+// ================= Grid =================
+const GG = ['mode', 'exchange', 'fee_pct', 'check_interval_sec', 'access_key', 'secret_key'];
+let gcfg = {coins: []}, gstat = null;
+const gTicks = {};
 const rTick = (v, t) => t > 0 ? Math.round(v / t) * t : Math.round(v);
 const G_CAND = {gap: '0.5,0.8,1,1.5,2', range: '5,10,15,20,30,40'};
-let gCandMode = null;
-function gRead() {
-  const o = {};
-  GCF.forEach(k => { const el = $('#gc_' + k); o[k] = el.type === 'checkbox' ? el.checked : el.value; });
-  return o;
+const gEd = coin => document.querySelector(`#gEditors .coinedit[data-coin="${coin}"]`);
+const gEds = () => [...document.querySelectorAll('#gEditors .coinedit')];
+
+function martinOverlap(coin, gexch, gmode) {
+  const mc = (cfg.coins || []).map(c => c.coin);
+  if (!coin || cfg.exchange !== gexch || !mc.includes(coin)) return null;
+  const block = cfg.mode === 'live' && gmode === 'live';
+  return {block, text: block
+    ? `Martin이 같은 거래소(${EXN[gexch]})에서 ${coin}을(를) 실전으로 쓰고 있어 Grid 실전으로는 저장할 수 없습니다. 두 봇이 같은 코인을 쓰면 서로의 체결이 섞입니다. Martin에서 ${coin}을(를) 먼저 정리·삭제하세요.`
+    : `Martin도 같은 거래소(${EXN[gexch]})에서 ${coin}을(를) 쓰고 있습니다. 모의투자는 괜찮지만, 둘 다 실전이면 같은 코인을 함께 쓸 수 없습니다.`};
 }
-function gLevels(o) {
-  const lo = +o.lower, hi = +o.upper, n = Math.round(+o.grids), t = gTick();
+function gridOverlap(coin, mexch, mmode) {
+  const gc = (gcfg.coins || []).map(c => c.coin);
+  if (!coin || gcfg.exchange !== mexch || !gc.includes(coin)) return null;
+  const block = gcfg.mode === 'live' && mmode === 'live';
+  return {block, text: block
+    ? `Grid가 같은 거래소(${EXN[mexch]})에서 ${coin}을(를) 실전으로 쓰고 있어 Martin 실전으로는 저장할 수 없습니다. Grid Set up에서 ${coin}을(를) 먼저 정리·삭제하세요.`
+    : `Grid도 같은 거래소(${EXN[mexch]})에서 ${coin}을(를) 쓰고 있습니다. 모의투자는 괜찮지만, 둘 다 실전이면 같은 코인을 함께 쓸 수 없습니다.`};
+}
+function mWarn(d) {
+  if (!d) return;
+  const w = gridOverlap(d.dataset.coin, $('#g_exchange').value, $('#g_mode').value);
+  const box = d.querySelector('[data-mwarn]'), badge = d.querySelector('[data-mwbadge]');
+  if (box) box.innerHTML = w ? `<div class="alert ${w.block ? 'bad' : 'warn'}">⚠ ${w.text}</div>` : '';
+  if (badge) badge.innerHTML = w ? `<span class="pill ${w.block ? 'live' : 'warn'}">Grid와 중복</span>` : '';
+}
+const mWarnAll = () => document.querySelectorAll('#coinEditors .coinedit').forEach(mWarn);
+['#g_exchange', '#g_mode'].forEach(id => $(id).addEventListener('input', mWarnAll));
+
+function gLevels(o, t) {
+  const lo = +o.lower, hi = +o.upper, n = Math.round(+o.grids);
   if (!(lo > 0 && hi > lo && n >= 1 && n <= 100)) return [];
   return Array.from({length: n + 1}, (_, i) => rTick(o.spacing === 'arith' ? lo + (hi - lo) * i / n : lo * (hi / lo) ** (i / n), t));
 }
-function gSync() {
-  const mode = $('#gc_range_mode').value, by = $('#gCountBy').value, auto = mode === 'gap';
-  document.querySelectorAll('#tab-gridset [data-mode]').forEach(r => r.classList.toggle('hidden', r.dataset.mode !== mode));
-  document.querySelectorAll('#tab-gridset [data-countby]').forEach(r => r.classList.toggle('hidden', !auto || r.dataset.countby !== by));
-  $('#gc_upper').readOnly = auto;
-  $('#gc_grids').readOnly = auto && by === 'budget';
+function gEditor(c, open) {
+  const d = document.createElement('details');
+  d.className = 'coinedit'; d.dataset.coin = c.coin; if (open) d.open = true;
+  d.style.setProperty('--cc', coinColor(c.coin));
+  const v = k => esc(c[k] ?? '');
+  const sel = (k, opts) => `<select data-k="${k}">${opts.map(([val, t]) => `<option value="${val}" ${String(c[k]) === val ? 'selected' : ''}>${t}</option>`).join('')}</select>`;
+  d.innerHTML = `<summary><span class="cdot"></span><span class="ctag">${esc(c.coin)}</span><span class="hint" data-sum></span><span class="spacer"></span><span data-warnbadge></span></summary>
+    <div class="body">
+      <div data-warn></div>
+      <div class="row"><label>이 코인 Grid</label><div><input type="checkbox" data-k="enabled" ${c.enabled ? 'checked' : ''}> <span class="hint">끄면 이 코인은 주문을 걸지 않습니다 (기록은 유지)</span></div></div>
+      <div class="row"><label>범위 정하는 방식</label>${sel('range_mode', [['gap', '간격 %로 — 하단 + 간격 + 칸 수 → 상단 자동 (추천)'], ['range', '하단·상단 직접 입력']])}</div>
+      <div class="row"><label>하단 가격 (원)</label><input data-k="lower" type="number" value="${+c.lower || ''}"><div class="hint">가장 아래 칸에서 사는 가격. 이보다 더 떨어지면 더 사지 않습니다</div></div>
+      <div class="row" data-mode="gap"><label>칸 간격 (%)</label><input data-k="gap_pct" type="number" min="0.2" max="50" step="0.1" value="${v('gap_pct')}"><div class="hint">산 가격에서 이만큼 오르면 팝니다. 다음 칸은 이만큼 아래에서 삽니다</div></div>
+      <div class="row"><label>칸당 매수 금액 (원)</label><input data-k="krw_per_grid" type="number" min="6000" step="10000" value="${v('krw_per_grid')}"></div>
+      <div class="row" data-mode="gap"><label>칸 수 정하기</label><select data-x="countby"><option value="count">칸 수를 직접 입력</option><option value="budget">총 예산으로 계산 (예산 ÷ 칸당 금액)</option></select></div>
+      <div class="row" data-countby="budget"><label>총 예산 (원)</label><input data-x="budget" type="number" min="0" step="100000" value="${(+c.grids || 0) * (+c.krw_per_grid || 0) || ''}"><div class="hint" data-x="budgethint"></div></div>
+      <div class="row"><label>칸 수</label><input data-k="grids" type="number" min="2" max="100" step="1" value="${v('grids')}"></div>
+      <div class="row"><label>상단 가격 (원)</label><input data-k="upper" type="number" value="${+c.upper || ''}"><div class="hint" data-x="upperhint"></div></div>
+      <div class="row" data-mode="range"><label>간격 방식</label>${sel('spacing', [['geom', '등비 — 칸마다 같은 % (추천)'], ['arith', '등간격 — 칸마다 같은 원']])}</div>
+      <div class="row"><span></span><div><select data-x="sugdays" class="auto"><option value="14">최근 2주</option><option value="30" selected>최근 30일</option><option value="60">최근 60일</option><option value="90">최근 90일</option></select>
+        <button type="button" class="small" data-x="suggest">최근 저가·고가로 채우기</button> <span class="hint" data-x="sugres"></span></div></div>
+      <div class="row"><label>손절</label><div><input type="checkbox" data-k="stop_loss_enabled" ${c.stop_loss_enabled ? 'checked' : ''}> <span class="hint">아래 가격 밑으로 떨어지면 이 코인 주문을 모두 취소하고 보유분을 시장가로 팔고 멈춥니다</span></div></div>
+      <div class="row" data-x="slrow"><label>손절 가격 (원)</label><input data-k="stop_loss_price" type="number" value="${+c.stop_loss_price || ''}"><div class="hint">하단 가격보다 낮게</div></div>
+      <div class="row"><span></span><div class="note" data-x="preview"></div></div>
+      <details><summary>칸별 사는 가격 · 파는 가격 미리보기</summary>
+        <div class="tablewrap"><table><thead><tr><th>칸</th><th>사는 가격</th><th>파는 가격</th><th>칸 수익 (수수료 후)</th></tr></thead><tbody data-x="ladder"></tbody></table></div></details>
+      <p style="margin:10px 0 0"><button type="button" class="danger small" data-x="del">이 코인 삭제</button></p>
+    </div>`;
+  const X = n => d.querySelector(`[data-x="${n}"]`);
+  d.querySelectorAll('[data-k],[data-x="countby"],[data-x="budget"]').forEach(el => el.addEventListener('input', () => { gSyncEd(d); if (el.dataset.k === 'range_mode') gSyncCand(); }));
+  X('del').onclick = () => { if (confirm(`${c.coin} 을(를) Grid 목록에서 삭제할까요? (저장해야 반영)`)) { d.remove(); gBtCoins(); } };
+  X('suggest').onclick = () => gSuggest(d);
+  gSyncEd(d);
+  return d;
+}
+function gReadEd(d) {
+  const o = {coin: d.dataset.coin};
+  d.querySelectorAll('[data-k]').forEach(el => o[el.dataset.k] = el.type === 'checkbox' ? el.checked : el.value);
+  return o;
+}
+function gSyncEd(d) {
+  const X = n => d.querySelector(`[data-x="${n}"]`), K = k => d.querySelector(`[data-k="${k}"]`);
+  const mode = K('range_mode').value, by = X('countby').value, auto = mode === 'gap', t = gTicks[d.dataset.coin] || 0;
+  d.querySelectorAll('[data-mode]').forEach(r => r.classList.toggle('hidden', r.dataset.mode !== mode));
+  d.querySelectorAll('[data-countby]').forEach(r => r.classList.toggle('hidden', !auto || r.dataset.countby !== by));
+  X('slrow').classList.toggle('hidden', !K('stop_loss_enabled').checked);
+  K('upper').readOnly = auto;
+  K('grids').readOnly = auto && by === 'budget';
   if (auto) {
-    $('#gc_spacing').value = 'geom';
-    const krw = +$('#gc_krw_per_grid').value, budget = +$('#gBudget').value;
+    K('spacing').value = 'geom';
+    const krw = +K('krw_per_grid').value, budget = +X('budget').value;
     if (by === 'budget') {
       const n = krw > 0 ? Math.min(100, Math.floor(budget / krw)) : 0;
-      $('#gc_grids').value = n || '';
-      $('#gBudgetHint').textContent = krw > 0 && budget > 0 ? `→ ${n}칸${budget - n * krw > 0 ? ` (남는 돈 ${won(budget - n * krw)})` : ''}` : '';
+      K('grids').value = n || '';
+      X('budgethint').textContent = krw > 0 && budget > 0 ? `→ ${n}칸${budget - n * krw > 0 ? ` (남는 돈 ${won(budget - n * krw)})` : ''}` : '';
     }
-    const lo = +$('#gc_lower').value, g = +$('#gc_gap_pct').value, n = +$('#gc_grids').value;
-    $('#gc_upper').value = lo > 0 && g > 0 && n >= 1 ? rTick(lo * (1 + g / 100) ** n, gTick()) : '';
-    $('#gUpperHint').textContent = '자동 계산 = 하단 × (1 + 간격)^칸 수. 가격이 이 위로 올라가면 모든 칸이 팔린 상태로 기다립니다';
-  } else $('#gUpperHint').textContent = '가장 위 칸에서 파는 가격';
-  if (gCandMode !== mode) {
-    if (gCandMode) G_CAND[gCandMode] = $('#gBtCounts').value;
-    gCandMode = mode;
-    $('#gBtCounts').value = G_CAND[mode];
-    $('#gBtCountsLabel').textContent = auto ? '간격(%) 후보' : '칸 수 후보';
-    $('#gBtCountsHint').textContent = auto ? '하단·칸 수·칸당 금액은 그대로 두고 간격만 바꿔 비교합니다 (간격이 넓으면 범위도 넓어짐)'
-      : '총 예산(칸 수 × 칸당 금액)은 그대로 두고 칸 수만 바꿔 비교합니다';
+    const lo = +K('lower').value, g = +K('gap_pct').value, n = +K('grids').value;
+    K('upper').value = lo > 0 && g > 0 && n >= 1 ? rTick(lo * (1 + g / 100) ** n, t) : '';
+    X('upperhint').textContent = '자동 계산 = 하단 × (1 + 간격)^칸 수. 가격이 이 위로 올라가면 모든 칸이 팔린 상태로 기다립니다';
+  } else X('upperhint').textContent = '가장 위 칸에서 파는 가격';
+  const o = gReadEd(d), lv = gLevels(o, t), fee = +$('#gc_fee_pct').value || 0, f = fee / 100, krw = +o.krw_per_grid;
+  let sum = o.enabled ? '' : '(꺼짐) ';
+  if (lv.length < 2) {
+    X('preview').textContent = '하단 가격·간격·칸 수를 넣으면 미리보기가 나옵니다.'; X('ladder').innerHTML = ''; sum += '범위를 입력하세요';
+  } else {
+    const prof = lv.slice(1).map((s, i) => (s * (1 - f) / (lv[i] * (1 + f)) - 1) * 100);
+    const mn = Math.min(...prof), mx = Math.max(...prof), n = lv.length - 1, gap = (lv[1] / lv[0] - 1) * 100;
+    const warn = mn < 0.1 ? `<br><b class="neg">⚠ 칸 간격이 너무 좁아 수수료를 빼면 남는 게 거의 없습니다. 간격을 넓히세요.</b>`
+      : mn < 0.3 ? `<br><span style="color:var(--warn)">칸 수익이 작아 수수료 비중이 큽니다. 백테스트로 확인해 보세요.</span>` : '';
+    X('preview').innerHTML = `<b>${num(lv[0])}</b> ~ <b>${num(lv[n])}</b> 사이에 <b>${n}칸</b> · 간격 약 ${gap.toFixed(2)}%${o.spacing === 'arith' ? '(하단 기준)' : ''}<br>
+      필요 예산 <b>${won(krw * n)}</b> (${n}칸 × ${won(krw)}) — 가격이 하단까지 떨어지면 전부 사용<br>
+      한 칸 왕복 수익(수수료 ${fee}% × 2 뺀 것) <b>${mn.toFixed(2)}%${mx - mn > 0.01 ? ` ~ ${mx.toFixed(2)}%` : ''}</b> ≈ ${won(krw * mn / 100)} / 회${warn}`;
+    X('ladder').innerHTML = lv.slice(0, -1).map((b, i) => ({i, b, s: lv[i + 1], p: prof[i]})).reverse()
+      .map(r => `<tr><td>${r.i + 1}</td><td>${num(r.b)}</td><td>${num(r.s)}</td><td>${r.p.toFixed(2)}% · ${won(krw * r.p / 100)}</td></tr>`).join('');
+    sum += `${num(lv[0])} ~ ${num(lv[n])} · ${n}칸 · 칸당 ${won(krw)} · 예산 ${won(krw * n)}`;
   }
-  gPreview();
+  d.querySelector('[data-sum]').textContent = sum;
+  const w = martinOverlap(d.dataset.coin, $('#gc_exchange').value, $('#gc_mode').value);
+  d.querySelector('[data-warn]').innerHTML = w ? `<div class="alert ${w.block ? 'bad' : 'warn'}">⚠ ${w.text}</div>` : '';
+  d.querySelector('[data-warnbadge]').innerHTML = w ? `<span class="pill ${w.block ? 'live' : 'warn'}">Martin과 중복</span>` : '';
 }
-function gPreview() {
-  const o = gRead(), lv = gLevels(o), f = (+o.fee_pct || 0) / 100;
-  if (lv.length < 2) { $('#gPreview').textContent = '하단 가격·간격·칸 수를 넣으면 미리보기가 나옵니다.'; $('#gLadder tbody').innerHTML = ''; return; }
-  const prof = lv.slice(1).map((s, i) => (s * (1 - f) / (lv[i] * (1 + f)) - 1) * 100);
-  const mn = Math.min(...prof), mx = Math.max(...prof), n = lv.length - 1, krw = +o.krw_per_grid;
-  const gap = (lv[1] / lv[0] - 1) * 100;
-  const warn = mn < 0.1 ? `<br><b class="neg">⚠ 칸 간격이 너무 좁아 수수료를 빼면 남는 게 거의 없습니다. 간격을 넓히세요.</b>`
-    : mn < 0.3 ? `<br><span style="color:var(--warn)">칸 수익이 작아 수수료 비중이 큽니다. 백테스트로 확인해 보세요.</span>` : '';
-  $('#gPreview').innerHTML = `<b>${num(lv[0])}</b> ~ <b>${num(lv[n])}</b> 사이에 <b>${n}칸</b> · 간격 약 ${gap.toFixed(2)}%${o.spacing === 'arith' ? '(하단 기준)' : ''}<br>
-    필요 예산 <b>${won(krw * n)}</b> (${n}칸 × ${won(krw)}) — 가격이 하단까지 떨어지면 전부 사용<br>
-    한 칸 왕복 수익(수수료 ${o.fee_pct}% × 2 뺀 것) <b>${mn.toFixed(2)}%${mx - mn > 0.01 ? ` ~ ${mx.toFixed(2)}%` : ''}</b> ≈ ${won(krw * mn / 100)} / 회${warn}`;
-  $('#gLadder tbody').innerHTML = lv.slice(0, -1).map((b, i) => ({i, b, s: lv[i + 1], p: prof[i]})).reverse()
-    .map(r => `<tr><td>${r.i + 1}</td><td>${num(r.b)}</td><td>${num(r.s)}</td><td>${r.p.toFixed(2)}% · ${won(krw * r.p / 100)}</td></tr>`).join('');
-  const mc = (cfg.coins || []).map(c => c.coin);
-  $('#gCoinHint').innerHTML = cfg.mode === 'live' && o.mode === 'live' && cfg.exchange === o.exchange && mc.includes(o.coin.trim().toUpperCase())
-    ? `<span class="neg">Martin Bot이 같은 거래소에서 실전으로 쓰는 코인입니다. Martin Bot에서 먼저 정리·삭제해야 실전 저장이 됩니다.</span>`
-    : (mc.length ? `Martin Bot 코인: ${mc.join(', ')} — 실전에서는 이 코인과 겹치지 않게` : '');
+function gSyncAll() { gEds().forEach(gSyncEd); gBtCoins(); }
+['#gc_mode', '#gc_exchange', '#gc_fee_pct'].forEach(id => $(id).addEventListener('input', gSyncAll));
+function gBtCoins() {
+  const cur = $('#gBtCoin').value, names = gEds().map(d => d.dataset.coin);
+  $('#gBtCoin').innerHTML = names.map(n => `<option ${n === cur ? 'selected' : ''}>${esc(n)}</option>`).join('');
+  gSyncCand();
 }
-[...GCF.map(k => '#gc_' + k), '#gCountBy', '#gBudget'].forEach(id => $(id).addEventListener('input', gSync));
+let gCandMode = null;
+function gSyncCand() {
+  const d = gEd($('#gBtCoin').value), mode = d ? d.querySelector('[data-k="range_mode"]').value : 'gap';
+  if (gCandMode === mode) return;
+  if (gCandMode) G_CAND[gCandMode] = $('#gBtCounts').value;
+  gCandMode = mode;
+  $('#gBtCounts').value = G_CAND[mode];
+  $('#gBtCountsLabel').textContent = mode === 'gap' ? '간격(%) 후보' : '칸 수 후보';
+  $('#gBtCountsHint').textContent = mode === 'gap' ? '하단·칸 수·칸당 금액은 그대로 두고 간격만 바꿔 비교합니다 (간격이 넓으면 범위도 넓어짐)'
+    : '총 예산(칸 수 × 칸당 금액)은 그대로 두고 칸 수만 바꿔 비교합니다';
+}
+$('#gBtCoin').addEventListener('input', gSyncCand);
 async function gLoadConfig() {
   gcfg = await api('/api/grid/config');
-  GCF.forEach(k => { const el = $('#gc_' + k); if (el.type === 'checkbox') el.checked = !!gcfg[k]; else el.value = gcfg[k] ?? ''; });
-  if (!(+gcfg.lower)) $('#gc_lower').value = '';
-  if (!(+gcfg.upper)) $('#gc_upper').value = '';
-  $('#gCountBy').value = 'count';
-  $('#gBudget').value = (+gcfg.grids || 0) * (+gcfg.krw_per_grid || 0) || '';
-  gSync();
+  GG.forEach(k => $('#gc_' + k).value = gcfg[k] ?? '');
+  const box = $('#gEditors'); box.innerHTML = '';
+  gcfg.coins.forEach(c => box.appendChild(gEditor(c, gcfg.coins.length === 1)));
+  gSyncAll(); mWarnAll();
 }
+$('#gAddSel').onchange = () => $('#gAddTxt').classList.toggle('hidden', $('#gAddSel').value !== '_');
+$('#gAddBtn').onclick = () => {
+  const name = ($('#gAddSel').value === '_' ? $('#gAddTxt').value : $('#gAddSel').value).trim().toUpperCase();
+  if (!/^[A-Z0-9]{2,10}$/.test(name)) return alert('코인 심볼을 영문으로 입력하세요. 예: DOGE');
+  if (gEd(name)) return alert('이미 있는 코인입니다.');
+  const base = gcfg.coins[0] || {};
+  const d = gEditor({...base, coin: name, enabled: true, lower: 0, upper: 0, stop_loss_enabled: false, stop_loss_price: 0}, true);
+  $('#gEditors').appendChild(d); gBtCoins();
+  d.scrollIntoView({behavior: 'smooth', block: 'start'});
+};
 $('#gSave').onclick = async () => {
-  gSync();
-  const body = gRead();
-  if (body.mode === 'live' && gcfg.mode !== 'live' && !confirm('그리드 실전 모드는 실제 돈으로 지정가 주문을 겁니다. 계속할까요?')) return;
+  gSyncAll();
+  const body = {};
+  GG.forEach(k => body[k] = $('#gc_' + k).value);
+  body.coins = gEds().map(gReadEd);
+  if (body.mode === 'live' && gcfg.mode !== 'live' && !confirm('Grid 실전 모드는 실제 돈으로 지정가 주문을 겁니다. 계속할까요?')) return;
   const r = await api('/api/grid/config', body);
   showErr($('#gCfgErr'), r.errors);
   if (r.ok) { $('#gCfgOk').textContent = '저장됨 ✓'; setTimeout(() => $('#gCfgOk').textContent = '', 2500); await gLoadConfig(); gRefresh(); }
   else $('#gCfgErr').scrollIntoView({behavior: 'smooth', block: 'center'});
 };
-$('#gSuggest').onclick = async () => {
-  $('#gSugRes').textContent = '시세 확인 중…';
-  const o = gRead();
-  const r = await api('/api/grid/suggest', {days: +$('#gSugDays').value, coin: o.coin, exchange: o.exchange});
-  if (!r.ok) { $('#gSugRes').textContent = '실패: ' + r.errors.join(' '); return; }
-  const t = r.tick || 1; gLastTick = r.tick || gLastTick;
-  $('#gc_lower').value = Math.floor(r.low / t) * t;
-  if (o.range_mode === 'gap') {
-    const g = +o.gap_pct || 1;
+async function gSuggest(d) {
+  const X = n => d.querySelector(`[data-x="${n}"]`), K = k => d.querySelector(`[data-k="${k}"]`), coin = d.dataset.coin;
+  X('sugres').textContent = '시세 확인 중…';
+  const r = await api('/api/grid/suggest', {days: +X('sugdays').value, coin, exchange: $('#gc_exchange').value});
+  if (!r.ok) { X('sugres').textContent = '실패: ' + r.errors.join(' '); return; }
+  const t = r.tick || 1; if (r.tick) gTicks[coin] = r.tick;
+  K('lower').value = Math.floor(r.low / t) * t;
+  if (K('range_mode').value === 'gap') {
+    const g = +K('gap_pct').value || 1;
     const n = Math.min(100, Math.max(2, Math.ceil(Math.log(r.high / r.low) / Math.log(1 + g / 100))));
-    $('#gCountBy').value = 'count'; $('#gc_grids').value = n;
-    $('#gSugRes').textContent = `저가 ${num(r.low)} · 고가 ${num(r.high)} · 현재 ${num(r.price)} → 간격 ${g}%로 고가까지 ${n}칸`;
+    X('countby').value = 'count'; K('grids').value = n;
+    X('sugres').textContent = `저가 ${num(r.low)} · 고가 ${num(r.high)} · 현재 ${num(r.price)} → 간격 ${g}%로 고가까지 ${n}칸`;
   } else {
-    $('#gc_upper').value = Math.ceil(r.high / t) * t;
-    $('#gSugRes').textContent = `저가 ${num(r.low)} · 고가 ${num(r.high)} · 현재 ${num(r.price)} (호가 단위 ${num(t)})`;
+    K('upper').value = Math.ceil(r.high / t) * t;
+    X('sugres').textContent = `저가 ${num(r.low)} · 고가 ${num(r.high)} · 현재 ${num(r.price)} (호가 단위 ${num(t)})`;
   }
-  gSync();
-};
+  gSyncEd(d);
+}
 $('#gGoSet').onclick = () => document.querySelector('nav button[data-tab="gridset"]').click();
 $('#gStart').onclick = async () => {
-  if (gcfg.mode === 'live' && !confirm(`실전 모드로 ${EXN[gcfg.exchange]} ${gcfg.coin} 그리드를 시작합니다.\n${num(+gcfg.lower)} ~ ${num(+gcfg.upper)} · ${gcfg.grids}칸 · 칸당 ${won(gcfg.krw_per_grid)}\n계속할까요?`)) return;
+  const on = (gcfg.coins || []).filter(c => c.enabled).map(c => c.coin).join(', ');
+  if (gcfg.mode === 'live' && !confirm(`실전 모드로 ${EXN[gcfg.exchange]} Grid [${on}]를 시작합니다. 계속할까요?`)) return;
   const r = await api('/api/grid/start', {}); showErr($('#gErr'), r.errors); gRefresh();
 };
 $('#gStop').onclick = async () => {
-  if (!confirm('그리드를 중지하고 걸어둔 주문을 모두 취소합니다. 보유 코인은 그대로 둡니다. 계속할까요?')) return;
+  if (!confirm('Grid를 중지하고 걸어둔 주문을 모두 취소합니다. 보유 코인은 그대로 둡니다. 계속할까요?')) return;
   const r = await api('/api/grid/stop', {}); showErr($('#gErr'), r.errors); gRefresh();
 };
-$('#gClearSell').onclick = async () => {
-  if (!confirm('그리드가 보유한 코인을 시장가로 전량 매도하고 격자를 비웁니다. 손익이 확정됩니다. 계속할까요?')) return;
-  const r = await api('/api/grid/clear', {action: 'sell'}); showErr($('#gErr'), r.errors); gRefresh();
-};
-$('#gClearForget').onclick = async () => {
-  if (!confirm('그리드 기록(칸·주문)만 비웁니다. 거래소 잔고와 미체결 주문은 그대로입니다. 거래소 앱에서 직접 정리했을 때만 쓰세요. 계속할까요?')) return;
-  const r = await api('/api/grid/clear', {action: 'forget'}); showErr($('#gErr'), r.errors); gRefresh();
-};
-const G_ST = {idle: ['대기', ''], buy: ['매수 대기', 'acc'], hold: ['보유 (매도 준비)', 'warn'], sell: ['매도 대기', 'on']};
+
+const G_ST = {idle: ['대기', ''], buy: ['매수 대기', 'acc'], hold: ['보유 (매도 준비)', 'warn'], sell: ['매도 대기', 'gridp']};
+const gOpen = new Set();
+let gFirst = true;
+function gCoinCard(c, s) {
+  const t = c.total, st = c.stats, cells = c.cells;
+  const chip = !c.enabled ? '<span class="pill">꺼짐</span>' : c.paused ? '<span class="pill live">일시정지</span>'
+    : s.running ? (cells.length && c.price && !t.in_range ? '<span class="pill warn">범위 밖</span>' : '<span class="pill gridp">실행 중</span>') : '<span class="pill">정지</span>';
+  const w = martinOverlap(c.coin, s.exchange, s.mode);
+  let alerts = '';
+  if (c.paused) alerts += `<div class="alert bad">⛔ ${esc(c.paused)}</div>`;
+  if (w) alerts += `<div class="alert ${w.block ? 'bad' : 'warn'}">⚠ ${w.text}</div>`;
+  if (cells.length && c.price && !t.in_range && c.enabled) alerts += `<div class="alert warn">현재가가 격자 범위(${num(cells[0].buy)} ~ ${num(cells[cells.length - 1].sell)}) 밖입니다. ${c.price < cells[0].buy ? '아래로 벗어나 모든 칸이 코인을 들고 반등을 기다립니다.' : '위로 벗어나 모든 칸이 팔린 상태로 매수 대기 중입니다.'}</div>`;
+  const rows = [];
+  let marked = false;
+  for (let i = cells.length - 1; i >= 0; i--) {
+    const x = cells[i];
+    if (!marked && c.price && c.price >= x.sell) { rows.push(`<tr class="cur"><td colspan="6" style="text-align:center;color:var(--grid)">── 현재가 ${num(c.price)} ──</td></tr>`); marked = true; }
+    const [label, pc] = G_ST[x.st] || [x.st, ''];
+    rows.push(`<tr><td>${x.i + 1}</td><td>${num(x.buy)}</td><td>${num(x.sell)}</td><td><span class="pill ${pc}">${label}</span></td><td>${x.qty ? x.qty.toFixed(8) : ''}</td><td>${x.cost ? won(x.cost) : ''}</td></tr>`);
+  }
+  if (!marked && c.price && cells.length) rows.push(`<tr class="cur"><td colspan="6" style="text-align:center;color:var(--grid)">── 현재가 ${num(c.price)} ──</td></tr>`);
+  const sm = c.summary;
+  const range = cells.length ? `${num(cells[0].buy)} ~ ${num(cells[cells.length - 1].sell)} · ${cells.length}칸` : sm ? `${num(sm.levels[0])} ~ ${num(sm.levels[sm.levels.length - 1])} · ${sm.cells}칸 (시작하면 생성)` : '범위 미설정';
+  const canClear = !s.running && !s.stopping && (cells.length || c.paused);
+  return `<div class="card gcoin" style="--cc:${coinColor(c.coin)}">
+    <div class="coinhead"><span class="cdot"></span><h3>${esc(c.coin)}</h3>${chip}${w ? `<span class="pill ${w.block ? 'live' : 'warn'}">Martin과 중복</span>` : ''}<span class="spacer"></span><span class="hint">현재가</span><b>${num(c.price)}</b></div>
+    ${alerts}
+    <div class="mini">
+      <div><span class="k">범위</span><span class="v">${range}</span></div>
+      <div><span class="k">실현 수익</span><span class="v ${cls(st.realized)}">${signed(st.realized)} <small>${st.round_trips}회</small></span></div>
+      <div><span class="k">보유 평가손익</span><span class="v ${cls(t.unrealized)}">${t.hold_qty ? signed(t.unrealized) : '-'} <small>${t.hold_qty ? '매수 ' + won(t.hold_cost) : '보유 없음'}</small></span></div>
+      <div><span class="k">매수 대기 주문</span><span class="v">${won(t.buy_orders_krw)} <small>예산 ${won(t.budget)}</small></span></div>
+    </div>
+    ${cells.length ? `<details data-gc="${esc(c.coin)}"><summary>격자 ${cells.length}칸 보기</summary>
+      <div class="tablewrap"><table><thead><tr><th>칸</th><th>매수가</th><th>매도가</th><th>상태</th><th>보유 수량</th><th>매수 금액</th></tr></thead><tbody>${rows.join('')}</tbody></table></div></details>` : ''}
+    ${canClear ? `<p class="clearrow"><span class="hint">정리:</span> <button class="danger small" data-gclear="sell" data-coin="${esc(c.coin)}">보유분 시장가 매도 후 비우기</button>
+      <button class="small" data-gclear="forget" data-coin="${esc(c.coin)}">기록만 비우기</button></p>` : ''}
+  </div>`;
+}
 async function gRefresh() {
   const s = gstat = await api('/api/grid/status'), t = s.total;
-  $('#gridPill').textContent = s.stopping ? 'Grid 정지 중' : s.running ? `Grid ${s.coin} 실행 중` : 'Grid 정지';
+  (s.coins || []).forEach(c => { if (c.minfo && c.minfo.tick) gTicks[c.coin] = c.minfo.tick; });
+  const runCoins = s.coins.filter(c => c.enabled && !c.paused).map(c => c.coin);
+  $('#gridPill').textContent = s.stopping ? 'Grid 정지 중' : s.running ? `Grid 실행 중 · ${runCoins.join(', ')}` : 'Grid 정지';
   $('#gridPill').className = 'pill' + (s.running || s.stopping ? ' gridp' : '');
   gRunning = s.running || s.stopping; updateAllBtns();
   if ($('#tab-grid').classList.contains('hidden')) return;
   $('#gRunPill').textContent = s.stopping ? '주문 취소 중…' : s.running ? '실행 중' : '정지';
   $('#gRunPill').className = 'pill' + (s.running ? ' on' : s.stopping ? ' warn' : '');
   $('#gModePill').textContent = s.mode === 'live' ? '실전' : '모의투자'; $('#gModePill').className = 'pill' + (s.mode === 'live' ? ' live' : '');
-  $('#gExPill').textContent = `${EXN[s.exchange] || s.exchange} · ${s.coin}`;
+  $('#gExPill').textContent = EXN[s.exchange] || s.exchange;
   $('#gStart').disabled = s.running || s.stopping; $('#gStop').disabled = !s.running;
-  $('#gClearBox').classList.toggle('hidden', s.running || s.stopping);
-  const cells = s.cells, st = s.stats;
-  let alerts = '';
-  if (s.paused) alerts += `<div class="alert bad">⛔ ${esc(s.paused)}</div>`;
-  if (s.last_error) alerts += `<div class="alert bad">최근 오류: ${esc(s.last_error)}</div>`;
-  if (cells.length && s.price && !t.in_range) alerts += `<div class="alert warn">현재가가 격자 범위(${num(cells[0].buy)} ~ ${num(cells[cells.length - 1].sell)}) 밖입니다. ${s.price < cells[0].buy ? '아래로 벗어나 모든 칸이 코인을 들고 반등을 기다립니다.' : '위로 벗어나 모든 칸이 팔린 상태로 매수 대기 중입니다.'}</div>`;
-  $('#gAlerts').innerHTML = alerts;
+  $('#gAlerts').innerHTML = s.last_error ? `<div class="alert bad">최근 오류: ${esc(s.last_error)}</div>` : '';
   $('#gTotals').innerHTML = [
-    ['현재가', num(s.price), cells.length ? (t.in_range ? '범위 안' : '범위 밖') : '격자 없음 (시작하면 생성)'],
-    ['누적 실현 수익', `<span class="${cls(st.realized)}">${signed(st.realized)}</span>`, `왕복 ${st.round_trips}회 · 수수료 ${won(st.fees)}`],
-    ['보유 코인 평가손익', `<span class="${cls(t.unrealized)}">${signed(t.unrealized)}</span>`, `${t.hold_qty ? t.hold_qty.toFixed(8) : 0} ${esc(s.coin)} · 매수 금액 ${won(t.hold_cost)}`],
-    ['매수 대기 주문', won(t.buy_orders_krw), `총 예산 ${won(t.budget)}`],
+    ['누적 실현 수익', `<span class="${cls(t.realized)}">${signed(t.realized)}</span>`, `왕복 ${t.round_trips}회 · 수수료 ${won(t.fees)}`],
+    ['보유 코인 평가손익', `<span class="${cls(t.unrealized)}">${signed(t.unrealized)}</span>`, `매수 금액 ${won(t.hold_cost)}`],
+    ['매수 대기 주문', won(t.buy_orders_krw), '지정가로 걸어둔 원화 (실전에선 묶인 돈)'],
+    ['총 예산', won(t.budget), `켜진 코인 ${s.coins.filter(c => c.enabled).length}개 합계`],
   ].map(([k, v, sub]) => `<div class="card stat"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${sub}</div></div>`).join('');
-  const rows = [];
-  let marked = false;
-  for (let i = cells.length - 1; i >= 0; i--) {
-    const c = cells[i];
-    if (!marked && s.price && s.price >= c.sell) { rows.push(`<tr class="cur"><td colspan="6" style="text-align:center;color:var(--accent)">── 현재가 ${num(s.price)} ──</td></tr>`); marked = true; }
-    const [label, pc] = G_ST[c.st] || [c.st, ''];
-    rows.push(`<tr><td>${c.i + 1}</td><td>${num(c.buy)}</td><td>${num(c.sell)}</td><td><span class="pill ${pc}">${label}</span></td><td>${c.qty ? c.qty.toFixed(8) : ''}</td><td>${c.cost ? won(c.cost) : ''}</td></tr>`);
-  }
-  if (!marked && s.price && cells.length) rows.push(`<tr class="cur"><td colspan="6" style="text-align:center;color:var(--accent)">── 현재가 ${num(s.price)} ──</td></tr>`);
-  $('#gCells tbody').innerHTML = rows.join('') || '<tr><td colspan="6" class="hint">아직 격자가 없습니다. 설정 저장 후 [그리드 시작]을 누르면 만들어집니다.</td></tr>';
-  $('#gHist tbody').innerHTML = st.history.slice(0, 20).map(h => `<tr><td>${esc(h.at).slice(5, 16)}</td><td>${esc(h.cell)}</td><td>${num(h.buy)}</td><td>${num(h.sell)}</td><td>${won(h.cost)}</td><td class="${cls(h.profit)}">${signed(h.profit)}</td></tr>`).join('')
-    || '<tr><td colspan="6" class="hint">아직 없음</td></tr>';
+  document.querySelectorAll('#gCoins details[data-gc]').forEach(d => d.open ? gOpen.add(d.dataset.gc) : gOpen.delete(d.dataset.gc));
+  if (gFirst && s.coins.length === 1) gOpen.add(s.coins[0].coin);
+  gFirst = false;
+  $('#gCoins').innerHTML = s.coins.map(c => gCoinCard(c, s)).join('') || '<div class="card hint">Set up에서 코인을 추가하세요.</div>';
+  document.querySelectorAll('#gCoins details[data-gc]').forEach(d => { if (gOpen.has(d.dataset.gc)) d.open = true; });
+  document.querySelectorAll('[data-gclear]').forEach(b => b.onclick = async () => {
+    const coin = b.dataset.coin, sell = b.dataset.gclear === 'sell';
+    if (!confirm(sell ? `${coin} Grid가 보유한 코인을 시장가로 전량 매도하고 격자를 비웁니다. 손익이 확정됩니다. 계속할까요?`
+      : `${coin} Grid 기록(칸·주문)만 비웁니다. 거래소 잔고와 미체결 주문은 그대로입니다. 거래소 앱에서 직접 정리했을 때만 쓰세요. 계속할까요?`)) return;
+    const r = await api('/api/grid/clear', {coin, action: b.dataset.gclear}); showErr($('#gErr'), r.errors); gRefresh();
+  });
+  const hist = s.coins.flatMap(c => c.stats.history.map(h => ({...h, coin: c.coin}))).sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 30);
+  $('#gHist tbody').innerHTML = hist.map(h => `<tr><td>${esc(h.at).slice(5, 16)}</td><td>${esc(h.coin)}</td><td>${esc(h.cell)}</td><td>${num(h.buy)}</td><td>${num(h.sell)}</td><td>${won(h.cost)}</td><td class="${cls(h.profit)}">${signed(h.profit)}</td></tr>`).join('')
+    || '<tr><td colspan="7" class="hint">아직 없음</td></tr>';
   $('#gLogs').textContent = s.logs.join('\n') || '아직 없음';
 }
 
 let gChart;
 async function gBacktest(sweep) {
   showErr($('#gBtErr'), []);
-  gSync();
-  const body = {...gRead(), days: +$('#gBtDays').value};
-  delete body.access_key; delete body.secret_key; delete body.mode;
+  const d = gEd($('#gBtCoin').value);
+  if (!d) return showErr($('#gBtErr'), ['백테스트할 코인을 고르세요.']);
+  gSyncEd(d);
+  const body = {...gReadEd(d), exchange: $('#gc_exchange').value, fee_pct: $('#gc_fee_pct').value, days: +$('#gBtDays').value};
   if (sweep) {
     const vals = $('#gBtCounts').value.split(',').map(x => +x.trim()).filter(x => x > 0);
     body.counts = body.range_mode === 'gap' ? vals : vals.filter(x => x >= 2).map(Math.round);
@@ -1003,7 +1110,7 @@ function gRenderSingle(r) {
 function gRenderSweep(r) {
   const byGap = r.by === 'gap';
   $('#gSwTitle').textContent = `${r.coin} · 최근 ${r.days}일 · ${byGap ? '칸 간격(%) 비교' : '같은 총 예산으로 칸 수 비교'}`;
-  $('#gSwHint').textContent = byGap ? '행을 누르면 그 간격을 설정 칸에 넣습니다 (저장해야 반영).' : '행을 누르면 그 칸 수와 칸당 금액을 설정 칸에 넣습니다 (저장해야 반영).';
+  $('#gSwHint').textContent = byGap ? `행을 누르면 그 간격을 ${r.coin} 설정 칸에 넣습니다 (저장해야 반영).` : `행을 누르면 그 칸 수와 칸당 금액을 ${r.coin} 설정 칸에 넣습니다 (저장해야 반영).`;
   $('#gSwTable thead').innerHTML = `<tr>${byGap ? '<th>간격</th><th>범위</th>' : '<th>칸 수</th><th>칸당 금액</th>'}<th>칸 수익</th><th>왕복 횟수</th><th>실현 수익</th><th>끝 평가손익</th><th>총 손익</th><th>수익률</th><th>최악 평가손실</th><th>범위 안</th><th>비고</th></tr>`;
   $('#gSwTable tbody').innerHTML = r.rows.map((x, i) => `<tr class="pick ${x.current ? 'mine' : ''}" data-i="${i}">
     ${byGap ? `<td>${x.gap_pct}%${x.current ? ' ◀ 현재' : ''}</td><td>${num(x.lower)} ~ ${num(x.upper)}</td>`
@@ -1013,16 +1120,18 @@ function gRenderSweep(r) {
     <td class="${cls(x.total_pnl)}">${signed(x.total_pnl)}</td><td class="${cls(x.return_pct)}">${pct(x.return_pct)}</td>
     <td class="neg">${signed(x.worst_unrealized)}</td><td>${x.in_range_pct}%</td><td class="hint">${esc(x.note)}</td></tr>`).join('') || '<tr><td colspan="11" class="hint">결과 없음</td></tr>';
   document.querySelectorAll('#gSwTable tr.pick').forEach(tr => tr.onclick = () => {
-    const x = r.rows[+tr.dataset.i];
+    const x = r.rows[+tr.dataset.i], d = gEd(r.coin);
+    if (!d) return;
+    const K = k => d.querySelector(`[data-k="${k}"]`);
     if (byGap) {
-      if (!confirm(`칸 간격 ${x.gap_pct}%를 설정 칸에 넣을까요? (저장해야 반영)`)) return;
-      $('#gc_gap_pct').value = x.gap_pct;
+      if (!confirm(`${r.coin} 칸 간격 ${x.gap_pct}%를 설정 칸에 넣을까요? (저장해야 반영)`)) return;
+      K('gap_pct').value = x.gap_pct;
     } else {
-      if (!confirm(`칸 수 ${x.grids}, 칸당 ${won(x.krw_per_grid)}을 설정 칸에 넣을까요? (저장해야 반영)`)) return;
-      $('#gc_grids').value = x.grids; $('#gc_krw_per_grid').value = Math.floor(x.krw_per_grid / 100) * 100;
+      if (!confirm(`${r.coin} 칸 수 ${x.grids}, 칸당 ${won(x.krw_per_grid)}을 설정 칸에 넣을까요? (저장해야 반영)`)) return;
+      K('grids').value = x.grids; K('krw_per_grid').value = Math.floor(x.krw_per_grid / 100) * 100;
     }
-    gSync();
-    $('#gPreview').scrollIntoView({behavior: 'smooth', block: 'center'});
+    d.open = true; gSyncEd(d);
+    d.scrollIntoView({behavior: 'smooth', block: 'start'});
   });
 }
 gLoadConfig().then(gRefresh);
