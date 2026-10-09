@@ -17,12 +17,18 @@ from werkzeug.security import check_password_hash
 from bot import Bot
 from backtest import fetch_candles, run_backtest, run_sweep, run_optimize
 from exchanges import exchange_class, ExchangeError, my_public_ip
+from grid_bot import GridBot
+from grid_backtest import run_grid_backtest, run_grid_sweep, suggest_range
+from grid_strategy import validate as grid_validate
 
-VERSION = "1.8"
+VERSION = "1.9"
 BASE = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, static_folder=os.path.join(BASE, "static"))
 bot = Bot()
+grid = GridBot(bot)
+bot.extra_validate = lambda martin_cfg: grid.check_conflict(martin_cfg=martin_cfg)
 bt_state = {"running": False, "progress": "", "result": None, "error": ""}
+gbt_state = {"running": False, "progress": "", "result": None, "error": ""}
 
 # ---------------- 로그인 ----------------
 DATA = os.path.join(BASE, "data")
@@ -261,10 +267,129 @@ def backtest_status():
     return jsonify(bt_state)
 
 
+# ---------------- 그리드 ----------------
+@app.get("/api/grid/status")
+def grid_status():
+    return jsonify(grid.status())
+
+
+@app.get("/api/grid/config")
+def grid_get_config():
+    return jsonify(grid.public_config())
+
+
+@app.post("/api/grid/config")
+def grid_set_config():
+    errs = grid.update_config(request.get_json(force=True) or {})
+    return jsonify({"ok": not errs, "errors": errs, "config": grid.public_config()})
+
+
+@app.post("/api/grid/start")
+def grid_start():
+    errs = grid.start()
+    return jsonify({"ok": not errs, "errors": errs})
+
+
+@app.post("/api/grid/stop")
+def grid_stop():
+    errs = grid.stop()
+    return jsonify({"ok": not errs, "errors": errs})
+
+
+@app.post("/api/grid/clear")
+def grid_clear():
+    errs = grid.clear((request.get_json(force=True) or {}).get("action", ""))
+    return jsonify({"ok": not errs, "errors": errs})
+
+
+@app.post("/api/grid/suggest")
+def grid_suggest():
+    """최근 N일 고가·저가로 범위 제안"""
+    body = request.get_json(force=True) or {}
+    days = max(7, min(365, int(body.get("days", 30))))
+    exch = body.get("exchange") or grid.cfg["exchange"]
+    coin = (body.get("coin") or grid.cfg["coin"]).upper()
+    try:
+        ex = exchange_class(exch)()
+        cs = fetch_candles(ex, f"KRW-{coin}", days)
+        r = suggest_range(cs, days)
+        if not r:
+            raise ExchangeError("시세 데이터를 받지 못했습니다.")
+        try:
+            r["tick"] = ex.market_info(f"KRW-{coin}")["tick"]
+        except Exception:
+            r["tick"] = 0
+        return jsonify({"ok": True, **r})
+    except Exception as e:
+        return jsonify({"ok": False, "errors": [str(e)]})
+
+
+@app.post("/api/grid/backtest")
+def grid_backtest():
+    if gbt_state["running"]:
+        return jsonify({"ok": False, "errors": ["그리드 백테스트가 이미 진행 중입니다."]})
+    body = request.get_json(force=True) or {}
+    days = int(body.get("days", 180))
+    cfg = dict(grid.cfg)
+    for k in ("lower", "upper", "fee_pct"):
+        if body.get(k) not in (None, ""):
+            cfg[k] = float(body[k])
+    for k in ("grids", "krw_per_grid"):
+        if body.get(k) not in (None, ""):
+            cfg[k] = int(float(body[k]))
+    if body.get("spacing") in ("geom", "arith"):
+        cfg["spacing"] = body["spacing"]
+    if body.get("coin"):
+        cfg["coin"] = str(body["coin"]).upper()
+    if body.get("exchange"):
+        cfg["exchange"] = body["exchange"]
+    errs = [e for e in grid_validate({**cfg, "mode": "paper"}) if "손절" not in e]
+    if errs:
+        return jsonify({"ok": False, "errors": errs})
+    counts = body.get("counts")
+
+    def job():
+        gbt_state.update(running=True, progress="시세 수집 중…", result=None, error="")
+        try:
+            ex = exchange_class(cfg["exchange"])()
+            tick, min_krw = 0.0, 5000.0
+            try:
+                mi = ex.market_info(f"KRW-{cfg['coin']}")
+                tick, min_krw = mi["tick"], mi["min_krw"]
+            except Exception:
+                pass
+            cs = fetch_candles(ex, f"KRW-{cfg['coin']}", days,
+                               progress=lambda n: gbt_state.update(progress=f"시세 {n:,}개 수집"))
+            if not cs:
+                raise ExchangeError("시세 데이터를 받지 못했습니다.")
+            gbt_state["progress"] = "계산 중…"
+            if counts:
+                r = {"kind": "sweep", "rows": run_grid_sweep(cs, cfg, counts, tick, min_krw)}
+            else:
+                r = {"kind": "single", **run_grid_backtest(cs, cfg, tick)}
+            r.update(coin=cfg["coin"], days=days)
+            gbt_state["result"] = r
+            gbt_state["progress"] = "완료"
+        except Exception as e:
+            gbt_state["error"] = str(e)
+            gbt_state["progress"] = "실패"
+        finally:
+            gbt_state["running"] = False
+
+    threading.Thread(target=job, daemon=True).start()
+    return jsonify({"ok": True})
+
+
+@app.get("/api/grid/backtest")
+def grid_backtest_status():
+    return jsonify(gbt_state)
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("MARTIN_PORT", 8765))
     if not os.environ.get("MARTIN_NO_BROWSER"):
         threading.Timer(1.2, lambda: webbrowser.open(f"http://127.0.0.1:{port}")).start()
     print(f"\n  마틴봇 v{VERSION}\n  폴더: {BASE}\n  대시보드: http://127.0.0.1:{port}\n  이 창을 닫으면 봇도 종료됩니다.\n")
     bot.resume_if_needed()  # 서버 재부팅 등으로 꺼졌다 켜지면 이어서 실행
+    grid.resume_if_needed()
     app.run(host="127.0.0.1", port=port, debug=False, use_reloader=False, threaded=True)

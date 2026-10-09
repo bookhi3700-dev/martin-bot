@@ -151,6 +151,7 @@ class Bot:
         self.logs = deque(maxlen=400)
         self.last_error = ""
         self.slots = {}
+        self.extra_validate = None   # 그리드 봇과 코인이 겹치는지 확인하는 함수 (app.py 에서 연결)
         self._sync_slots()
 
     # ---------- 도우미 ----------
@@ -208,6 +209,8 @@ class Bot:
                 except (TypeError, ValueError):
                     return ["코인 설정에 숫자가 아닌 값이 있습니다."]
             errs = validate_config(merged)
+            if not errs and self.extra_validate:
+                errs = self.extra_validate(merged)
             if errs:
                 return errs
             identity = any(merged[k] != self.cfg[k] for k in ("mode", "exchange"))
@@ -254,6 +257,8 @@ class Bot:
             if self.running:
                 return ["이미 실행 중입니다."]
             errs = validate_config(self.cfg)
+            if not errs and self.extra_validate:
+                errs = self.extra_validate(self.cfg)
             if errs:
                 return errs
             self.running = True
