@@ -165,17 +165,20 @@ input[readonly]{background:var(--chip)}
 .slidebody > div{overflow:hidden;min-height:0}
 .slide.collapsed .slidebody{grid-template-rows:0fr}
 #tab-home{--dom:var(--home)}
-details.fs{background:var(--card);border:1px solid var(--line);border-radius:12px;margin:0 0 14px;overflow:hidden}
-details.fs > summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:11px 16px;
-  background:color-mix(in srgb,var(--dom) 8%,var(--card));color:var(--dom)}
+details.fs{background:var(--zone);border:1px solid var(--line);border-radius:14px;padding:4px 14px;margin:0 0 12px}
+details.fs[open]{padding-bottom:14px}
+details.fs > summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:14px 0 10px}
 details.fs > summary::-webkit-details-marker{display:none}
-details.fs > summary::before{content:"▸";font-size:12px;transition:transform .2s}
-details.fs[open] > summary::before{transform:rotate(90deg)}
-details.fs[open] > summary{border-bottom:1px solid color-mix(in srgb,var(--dom) 18%,var(--line))}
-details.fs .fst{font-size:13px;font-weight:700}
-details.fs .fss{font-size:12.5px;color:var(--ink2);font-weight:500}
-details.fs > .row{margin:0 16px;padding:10px 0;border-bottom:1px solid var(--line2)}
-details.fs > .row:last-child{border-bottom:none}
+details.fs .fst{display:flex;align-items:center;gap:8px;font-size:15px;font-weight:700;letter-spacing:-.01em;color:var(--ink)}
+details.fs .fst::before{content:"";width:4px;height:16px;border-radius:2px;background:var(--dom);flex:none}
+details.fs .fss{order:3;flex-basis:100%;font-size:12px;color:var(--muted);font-weight:500;padding-left:12px}
+details.fs .fsbtn{margin-left:auto;font-size:12px;color:var(--dom);border:1px solid color-mix(in srgb,var(--dom) 35%,var(--line));
+  border-radius:8px;padding:3px 10px;background:var(--card)}
+details.fs .fsbtn::after{content:"펼치기 ▼"}
+details.fs[open] .fsbtn::after{content:"접기 ▲"}
+details.fs .fsbody{padding:2px 16px}
+details.fs .fsbody > .row{padding:10px 0;border-bottom:1px solid var(--line2)}
+details.fs .fsbody > .row:last-child{border-bottom:none}
 .hcols{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
 .hbot{border-top:3px solid var(--c)} .hbot.m{--c:var(--martin)} .hbot.g{--c:var(--grid)}
 .hbot .hh{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
@@ -253,7 +256,8 @@ nav .grp.h{--c:var(--home)}
 
   <!-- ================= 설정 ================= -->
   <section id="tab-settings" class="hidden">
-    <details class="fs" id="mCommon"><summary><span class="fst">거래소·공통</span><span class="fss" id="mCommonSum"></span></summary>
+    <details class="fs" id="mCommon"><summary><span class="fst">거래소 공통 설정</span><span class="fss" id="mCommonSum"></span><span class="fsbtn"></span></summary>
+      <div class="card fsbody">
       <div class="row"><label>실행 모드</label><select id="g_mode"><option value="paper">모의투자 (실제 주문 안 함)</option><option value="live">실전 (실제 주문)</option></select></div>
       <div class="row"><label>거래소</label><select id="g_exchange"><option value="upbit">업비트</option><option value="bithumb">빗썸</option><option value="coinone">코인원</option></select></div>
       <div class="row"><label>Access Key</label><input id="g_access_key" autocomplete="off" placeholder="실전 모드에서만 필요"></div>
@@ -267,6 +271,7 @@ nav .grp.h{--c:var(--home)}
       <div class="row"><label>슬리피지 (%)</label><input id="g_slippage_pct" type="number" min="0" step="0.05"><div class="hint">백테스트용 — 시장가 주문이 원하는 가격보다 불리하게 체결되는 정도</div></div>
       <div class="row"><label>텔레그램 봇 토큰</label><input id="g_telegram_token" autocomplete="off" placeholder="선택 — 매수/매도/오류 알림"></div>
       <div class="row"><label>텔레그램 chat_id</label><input id="g_telegram_chat_id" autocomplete="off"></div>
+      </div>
     </details>
 
     <div class="coinzone">
@@ -379,13 +384,15 @@ nav .grp.h{--c:var(--home)}
       예) 하단 1,000원 · 간격 1% · 칸당 10만 원이면 → 1,000원에 산 건 1,010원에 팔고, 1,010원에 산 건 1,020원에 팝니다.
       가격이 1%씩 내려갈 때마다 10만 원어치씩 사고, 각각 산 가격보다 1% 오르면 팝니다.</div>
 
-    <details class="fs" id="gCommon" style="margin-top:12px"><summary><span class="fst">공통 — 거래소·계좌</span><span class="fss" id="gCommonSum"></span></summary>
+    <details class="fs" id="gCommon" style="margin-top:12px"><summary><span class="fst">거래소 공통 설정</span><span class="fss" id="gCommonSum"></span><span class="fsbtn"></span></summary>
+      <div class="card fsbody">
       <div class="row"><label>실행 모드</label><select id="gc_mode"><option value="paper">모의투자 (실제 주문 안 함)</option><option value="live">실전 (실제 주문)</option></select></div>
       <div class="row"><label>거래소</label><select id="gc_exchange"><option value="coinone">코인원</option><option value="upbit">업비트</option><option value="bithumb">빗썸</option></select><div class="hint" id="gExHint"></div></div>
       <div class="row"><label>수수료 (%)</label><input id="gc_fee_pct" type="number" min="0" step="0.01"><div class="hint">지정가(메이커) 기준 본인 수수료율. 거래소 앱에서 확인하세요 — 칸 수익 계산·모의투자·백테스트에 씁니다</div></div>
       <div class="row"><label>시세 확인 주기 (초)</label><input id="gc_check_interval_sec" type="number" min="3" step="1"></div>
       <div class="row"><label>Grid용 Access Key</label><input id="gc_access_key" autocomplete="off" placeholder="비우면 Martin Bot 설정의 키 사용 (같은 거래소일 때)"></div>
       <div class="row"><label>Grid용 Secret Key</label><input id="gc_secret_key" type="password" autocomplete="off"><div class="hint">따로 발급하면 거래소 앱에서 어느 봇 주문인지 구분하기 쉽습니다. 출금 권한은 끄세요.</div></div>
+      </div>
     </details>
 
     <div class="coinzone">
