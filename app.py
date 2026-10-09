@@ -1,4 +1,4 @@
-"""마틴봇 대시보드 — 실행하면 브라우저에서 http://127.0.0.1:8765 이 열립니다.
+"""Martin Bot 대시보드 — 실행하면 브라우저에서 http://127.0.0.1:8765 이 열립니다.
 
 data/auth.json 에 비밀번호가 설정되어 있으면(set_password.py) 로그인해야 접속할 수 있습니다.
 서버에 올릴 때는 반드시 비밀번호를 설정하세요.
@@ -267,6 +267,25 @@ def backtest_status():
     return jsonify(bt_state)
 
 
+# ---------------- 전체 (Martin + Grid) ----------------
+@app.post("/api/all/start")
+def all_start():
+    """멈춰 있는 봇만 시작. 한쪽이 설정 문제로 못 켜져도 다른 쪽은 켭니다."""
+    m = [] if bot.running else bot.start()
+    g = [] if (grid.running or grid.stopping) else grid.start()
+    errs = [f"Martin: {e}" for e in m] + [f"Grid: {e}" for e in g]
+    return jsonify({"ok": not errs, "errors": errs, "martin": bot.running, "grid": grid.running})
+
+
+@app.post("/api/all/stop")
+def all_stop():
+    if bot.running:
+        bot.stop()
+    if grid.running:
+        grid.stop()
+    return jsonify({"ok": True})
+
+
 # ---------------- 그리드 ----------------
 @app.get("/api/grid/status")
 def grid_status():
@@ -394,7 +413,7 @@ if __name__ == "__main__":
     port = int(os.environ.get("MARTIN_PORT", 8765))
     if not os.environ.get("MARTIN_NO_BROWSER"):
         threading.Timer(1.2, lambda: webbrowser.open(f"http://127.0.0.1:{port}")).start()
-    print(f"\n  마틴봇 v{VERSION}\n  폴더: {BASE}\n  대시보드: http://127.0.0.1:{port}\n  이 창을 닫으면 봇도 종료됩니다.\n")
+    print(f"\n  Martin Bot v{VERSION}\n  폴더: {BASE}\n  대시보드: http://127.0.0.1:{port}\n  이 창을 닫으면 봇도 종료됩니다.\n")
     bot.resume_if_needed()  # 서버 재부팅 등으로 꺼졌다 켜지면 이어서 실행
     grid.resume_if_needed()
     app.run(host="127.0.0.1", port=port, debug=False, use_reloader=False, threaded=True)

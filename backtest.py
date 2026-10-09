@@ -81,7 +81,7 @@ def run_backtest(candles, cfg, detail=True, mid_index=None):
         nonlocal realized
         fill = price * (1 - slip)
         res = close_position(pos, pos.volume * fill * (1 - fee))
-        res.update({"ended_at": when, "reason": reason})
+        res.update({"ended_at": when, "reason": reason, "sell_price": fill})
         realized += res["profit"]
         cycles.append(res)
         if detail:

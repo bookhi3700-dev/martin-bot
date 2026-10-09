@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>마틴봇 대시보드</title>
+<title>Martin Bot 대시보드</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
@@ -145,8 +145,9 @@ input[readonly]{background:var(--chip)}
 .stick{background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(6px)}
 .coinzone{background:var(--zone)}
 .logs{background:var(--chip);border-color:var(--line)}
-.gbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-top:3px solid var(--grid)}
-.gbar h3{font-size:18px;font-weight:750;color:var(--grid);letter-spacing:-.01em}
+.gbar,.mbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-top:3px solid var(--dom)}
+.gbar h3,.mbar h3{font-size:18px;font-weight:750;color:var(--dom);letter-spacing:-.01em}
+header .allbtn{background:linear-gradient(90deg,var(--martin),var(--grid));border:none}
 @media (max-width:600px){ nav{overflow-x:auto;flex-wrap:nowrap} nav .grp{flex:none} nav .grp .gl{display:none} fieldset > .row,fieldset > details{margin:0 12px} }
 @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) button.primary, :root:not([data-theme="light"]) nav .grp button.act{color:#0f1318} }
 nav .grp.g .gl{padding-right:4px}
@@ -155,19 +156,17 @@ nav .grp.g .gl{padding-right:4px}
 </head>
 <body>
 <header>
-  <h1>마틴봇</h1>
-  <span id="runPill" class="pill">마틴 정지</span>
-  <span id="modePill" class="pill">모의투자</span>
-  <span id="exPill" class="pill"></span>
-  <span id="gridPill" class="pill gridp hidden"></span>
+  <h1>Martin Bot</h1>
+  <span id="runPill" class="pill">Martin 정지</span>
+  <span id="gridPill" class="pill">Grid 정지</span>
   <span id="ver" class="hint"></span>
   <span class="spacer"></span>
-  <button id="btnStart" class="primary">마틴 시작</button>
-  <button id="btnStop" class="danger">마틴 중지</button>
+  <button id="allStart" class="primary allbtn">전체 시작</button>
+  <button id="allStop" class="danger">전체 중지</button>
   <button id="btnLogout" class="hidden">로그아웃</button>
 </header>
 <nav>
-  <div class="grp"><span class="gl">마틴</span>
+  <div class="grp"><span class="gl">Martin</span>
     <button data-tab="dash" class="act">현황</button>
     <button data-tab="settings">설정</button>
     <button data-tab="bt">백테스트</button>
@@ -182,9 +181,20 @@ nav .grp.g .gl{padding-right:4px}
 
   <!-- ================= 현황 ================= -->
   <section id="tab-dash">
-    <div class="grid" id="totals"></div>
+    <div class="card mbar">
+      <h3>Martin</h3>
+      <span id="mRunPill" class="pill">정지</span>
+      <span id="modePill" class="pill">모의투자</span>
+      <span id="exPill" class="pill"></span>
+      <span class="spacer"></span>
+      <button id="btnStart" class="primary">Martin 시작</button>
+      <button id="btnStop" class="danger">Martin 중지</button>
+    </div>
+    <div class="grid" id="totals" style="margin-top:12px"></div>
     <h2>코인별 현황</h2>
     <div class="coins" id="coinCards"></div>
+    <h2>완료 사이클 (최근 30개)</h2>
+    <div class="card tablewrap"><table id="mHist"><thead><tr><th>종료</th><th>코인</th><th>사유</th><th>단계</th><th>매수 평단</th><th>매도가</th><th>투입</th><th>손익</th></tr></thead><tbody></tbody></table></div>
     <h2>로그</h2>
     <div class="card logs" id="logs"></div>
   </section>
@@ -243,7 +253,7 @@ nav .grp.g .gl{padding-right:4px}
         <div class="row"><label>단계별 하락폭 후보</label><textarea id="sw_drop" rows="3" placeholder="한 줄에 하나씩&#10;5&#10;5,5,7,10,15"></textarea><div class="hint">한 줄이 한 후보입니다. 예) <code>5</code> = 모든 단계 5% · <code>5,5,7,10,15</code> = 단계마다 다르게</div></div>
         <div class="row"><label>익절 수익률 후보 (%)</label><input id="sw_tp" placeholder="5,10,15"></div>
         <div class="row"><label>최대 단계 후보</label><input id="sw_steps" placeholder="5,6,7"></div>
-        <div class="row"><label>마틴 배수 후보</label><input id="sw_mult" placeholder="1.5,2"></div>
+        <div class="row"><label>Martin 배수 후보</label><input id="sw_mult" placeholder="1.5,2"></div>
         <div class="row"><label>추적 익절 폭 후보 (%)</label><input id="sw_trail" placeholder="0,2,3"><div class="hint">0 = 추적 익절 끔. 빈칸은 현재 설정값 하나만 사용합니다.</div></div>
         <div class="row"><span></span><div class="hint" id="swCount"></div></div>
       </div>
@@ -256,7 +266,7 @@ nav .grp.g .gl{padding-right:4px}
       <h2>가격과 매매 시점</h2>
       <div class="card"><div class="chartbox"><canvas id="btChart"></canvas></div></div>
       <h2>사이클 기록 (최근 100개)</h2>
-      <div class="card tablewrap"><table id="btHist"><thead><tr><th>시작</th><th>종료</th><th>사유</th><th>단계</th><th>투입</th><th>손익</th><th>수익률</th></tr></thead><tbody></tbody></table></div>
+      <div class="card tablewrap"><table id="btHist"><thead><tr><th>시작</th><th>종료</th><th>사유</th><th>단계</th><th>매수 평단</th><th>매도가</th><th>투입</th><th>손익</th><th>수익률</th></tr></thead><tbody></tbody></table></div>
     </div>
 
     <div id="btOpt" class="hidden">
@@ -347,7 +357,7 @@ nav .grp.g .gl{padding-right:4px}
       <div class="row"><label>손절 사용</label><div><input type="checkbox" id="gc_stop_loss_enabled"> <span class="hint">아래 가격 밑으로 떨어지면 그리드 주문을 모두 취소하고 보유분을 시장가로 팔고 멈춥니다</span></div></div>
       <div class="row"><label>손절 가격 (원)</label><input id="gc_stop_loss_price" type="number" step="10000"><div class="hint">하단 가격보다 낮게</div></div>
       <div class="row"><label>시세 확인 주기 (초)</label><input id="gc_check_interval_sec" type="number" min="3" step="1"></div>
-      <div class="row"><label>그리드용 Access Key</label><input id="gc_access_key" autocomplete="off" placeholder="비우면 마틴봇 설정의 키 사용 (같은 거래소일 때)"></div>
+      <div class="row"><label>그리드용 Access Key</label><input id="gc_access_key" autocomplete="off" placeholder="비우면 Martin Bot 설정의 키 사용 (같은 거래소일 때)"></div>
       <div class="row"><label>그리드용 Secret Key</label><input id="gc_secret_key" type="password" autocomplete="off"><div class="hint">따로 발급하면 거래소 앱에서 어느 봇 주문인지 구분하기 쉽습니다. 출금 권한은 끄세요.</div></div>
     </fieldset>
     <div class="stick">
@@ -407,7 +417,7 @@ let cfg = {coins: []};
 const COIN_FIELDS = [
   ['enabled', '이 코인 매매', 'check', '끄면 매매를 멈춥니다 (보유분은 유지)'],
   ['base_amount', '1단계 매수금액 (원)', 'number', '', 1000],
-  ['martin_multiplier', '마틴 배수', 'number', '2 = 1만→2만→4만…  1.5 = 1만→1.5만→2.25만…', 0.1],
+  ['martin_multiplier', 'Martin 배수', 'number', '2 = 1만→2만→4만…  1.5 = 1만→1.5만→2.25만…', 0.1],
   ['drop_steps', '단계별 하락폭 (%)', 'text', '쉼표로 구분. <code>5</code> = 모든 단계 5% · <code>5,5,7,10,15</code> = 2단계 5%, 3단계 5%, 4단계 7%… (모자라면 마지막 값 반복)'],
   ['drop_basis', '하락 기준', 'basis', ''],
   ['max_steps', '최대 단계', 'number', '', 1],
@@ -524,6 +534,22 @@ $('#btnStart').onclick = async () => {
   const r = await api('/api/start', {}); showErr($('#globalErr'), r.errors); refresh();
 };
 $('#btnStop').onclick = async () => { await api('/api/stop', {}); refresh(); };
+let mRunning = false, gRunning = false;
+function updateAllBtns() { $('#allStart').disabled = mRunning && gRunning; $('#allStop').disabled = !mRunning && !gRunning; }
+$('#allStart').onclick = async () => {
+  const on = (cfg.coins || []).filter(c => c.enabled).map(c => c.coin).join(', ');
+  const g = typeof gcfg !== 'undefined' ? gcfg : {};
+  const lines = [];
+  if (!mRunning) lines.push(`Martin — ${cfg.mode === 'live' ? '실전' : '모의투자'} · ${EXN[cfg.exchange]} · ${on || '켜진 코인 없음'}`);
+  if (!gRunning) lines.push(`Grid — ${g.mode === 'live' ? '실전' : '모의투자'} · ${EXN[g.exchange] || ''} · ${g.coin || ''} ${num(+g.lower)} ~ ${num(+g.upper)}`);
+  if (!lines.length) return;
+  if (!confirm(`다음을 시작합니다.\n\n${lines.join('\n')}\n\n계속할까요?`)) return;
+  const r = await api('/api/all/start', {}); showErr($('#globalErr'), r.errors); refresh(); gRefresh();
+};
+$('#allStop').onclick = async () => {
+  if (!confirm('Martin과 Grid를 모두 중지합니다. Grid가 걸어둔 주문은 취소되고, 보유 코인은 그대로 둡니다. 계속할까요?')) return;
+  await api('/api/all/stop', {}); refresh(); gRefresh();
+};
 $('#btnLogout').onclick = async () => { await api('/logout', {}); location.href = '/login'; };
 
 // ---------------- 현황 ----------------
@@ -554,12 +580,9 @@ function coinCard(c, running) {
       ${nextBuy}${exit}` : `<div class="k">포지션</div><div class="v">없음</div>`}
       <div class="k">실현손익</div><div class="v"><span class="${cls(c.stats.realized)}">${signed(c.stats.realized)}</span> <small>${c.stats.cycles}회</small></div>
     </div>
-    <details><summary>단계표 · 매수 내역 · 완료 사이클</summary>
+    <details><summary>단계표 · 매수 내역</summary>
       <div class="tablewrap"><table><thead><tr><th>단계</th><th>하락폭</th><th>금액</th><th>누적</th><th>체결가</th></tr></thead><tbody>
       ${c.ladder.map(r => { const b = p.buys.find(x => x.step === r.step); return `<tr class="${r.step < p.step ? 'done' : r.step === p.step ? 'cur' : ''}"><td>${r.step}</td><td>${r.drop == null ? '-' : r.drop + '%'}</td><td>${won(r.amount)}</td><td>${won(r.cumulative)}</td><td>${b ? num(b.price) : ''}</td></tr>`; }).join('')}
-      </tbody></table></div>
-      <div class="tablewrap" style="margin-top:8px"><table><thead><tr><th>종료</th><th>사유</th><th>단계</th><th>손익</th></tr></thead><tbody>
-      ${c.stats.history.slice(0, 20).map(h => `<tr><td>${esc(h.ended_at).slice(5, 16)}</td><td>${esc(h.reason).slice(0, 12)}</td><td>${h.steps}</td><td class="${cls(h.profit)}">${signed(h.profit)} (${h.profit_pct}%)</td></tr>`).join('') || '<tr><td colspan="4" class="hint">아직 없음</td></tr>'}
       </tbody></table></div>
       <p style="margin:10px 0 0"><button class="danger small" data-reset="${c.coin}">기록 초기화</button> <span class="hint">거래소에서 직접 팔았을 때만 사용 (잔고는 그대로)</span></p>
     </details>
@@ -569,7 +592,9 @@ const openDetails = new Set();
 async function refresh() {
   const s = await api('/api/status'), t = s.total;
   $('#btnLogout').classList.toggle('hidden', !s.auth);
-  $('#runPill').textContent = s.running ? '마틴 실행 중' : '마틴 정지'; $('#runPill').className = 'pill' + (s.running ? ' on' : '');
+  $('#runPill').textContent = s.running ? 'Martin 실행 중' : 'Martin 정지'; $('#runPill').className = 'pill' + (s.running ? ' on' : '');
+  $('#mRunPill').textContent = s.running ? '실행 중' : '정지'; $('#mRunPill').className = 'pill' + (s.running ? ' on' : '');
+  mRunning = s.running; updateAllBtns();
   $('#modePill').textContent = s.mode === 'live' ? '실전' : '모의투자'; $('#modePill').className = 'pill' + (s.mode === 'live' ? ' live' : '');
   $('#exPill').textContent = EXN[s.exchange] || s.exchange;
   $('#ver').textContent = s.version ? 'v' + s.version : '';
@@ -593,6 +618,10 @@ async function refresh() {
     if (!confirm('거래소 앱에서 체결 내역을 확인하셨나요? 재개하면 다시 자동매매합니다.')) return;
     showErr($('#globalErr'), (await api('/api/resume-coin', {coin: b.dataset.resume})).errors); refresh();
   });
+  const hist = s.coins.flatMap(c => c.stats.history.map(h => ({...h, coin: c.coin}))).sort((a, b) => String(b.ended_at).localeCompare(String(a.ended_at))).slice(0, 30);
+  $('#mHist tbody').innerHTML = hist.map(h => `<tr><td>${esc(h.ended_at).slice(5, 16)}</td><td>${esc(h.coin)}</td><td>${esc(h.reason)}</td><td>${h.steps}단계</td>
+    <td>${h.avg_price ? num(h.avg_price) : '-'}</td><td>${h.sell_price ? num(h.sell_price) : '-'}</td><td>${won(h.cost)}</td>
+    <td class="${cls(h.profit)}">${signed(h.profit)} (${h.profit_pct}%)</td></tr>`).join('') || '<tr><td colspan="8" class="hint">아직 없음</td></tr>';
   $('#logs').textContent = s.logs.join('\n');
 }
 
@@ -696,14 +725,14 @@ function renderSingle(r) {
     ['실현 손익', signed(r.realized), '', r.realized],
     ['기간 끝 미청산', r.open_position ? signed(r.open_position.pnl) : '없음', r.open_position ? `${r.open_position.step}단계 · 투입 ${won(r.open_position.cost)}` : '', r.open_position ? r.open_position.pnl : 0],
     ['총 손익', signed(r.total_pnl), `최대 투입금 대비 ${pct(r.return_on_peak_pct)}`, r.total_pnl],
-    ['그냥 보유했다면', pct(r.buy_hold_pct), `마틴이 ${vsHold >= 0 ? '앞섬' : '뒤처짐'} (${pct(vsHold)}p)`, r.buy_hold_pct],
+    ['그냥 보유했다면', pct(r.buy_hold_pct), `Martin이 ${vsHold >= 0 ? '앞섬' : '뒤처짐'} (${pct(vsHold)}p)`, r.buy_hold_pct],
     ['최대 투입금', won(r.peak_capital), `최대 단계 도달 ${r.max_step_hits}회` + (r.limit_hits ? ` · 한도 도달 ${r.limit_hits}회${r.stopped_by_limit ? ' (중지됨)' : ''}` : '')],
     ['최악의 평가손실', signed(r.worst_unrealized), `최대 투입금 대비 ${r.worst_unrealized_pct}%`, r.worst_unrealized],
     ['사이클 기간', r.avg_cycle_days != null ? `평균 ${r.avg_cycle_days}일` : '-', r.longest_cycle_days != null ? `최장 ${r.longest_cycle_days}일` : ''],
   ];
   $('#btStats').innerHTML = st.map(([k, v, s, c]) => `<div class="card stat"><div class="k">${k}</div><div class="v ${c != null ? cls(c) : ''}">${v}</div><div class="s">${s}</div></div>`).join('')
     + `<div class="card stat"><div class="k">몇 단계에서 끝났나</div><div class="s" style="margin-top:6px">${Object.entries(r.step_distribution).map(([k, v]) => `${k}단계 ${v}회`).join(' · ')}</div></div>`;
-  $('#btHist tbody').innerHTML = r.history.map(h => `<tr><td>${h.started_at.slice(0, 16).replace('T', ' ')}</td><td>${h.ended_at.slice(0, 16).replace('T', ' ')}</td><td>${esc(h.reason)}</td><td>${h.steps}</td><td>${won(h.cost)}</td><td class="${cls(h.profit)}">${signed(h.profit)}</td><td class="${cls(h.profit)}">${h.profit_pct}%</td></tr>`).join('');
+  $('#btHist tbody').innerHTML = r.history.map(h => `<tr><td>${h.started_at.slice(0, 16).replace('T', ' ')}</td><td>${h.ended_at.slice(0, 16).replace('T', ' ')}</td><td>${esc(h.reason)}</td><td>${h.steps}</td><td>${h.avg_price ? num(h.avg_price) : '-'}</td><td>${h.sell_price ? num(h.sell_price) : '-'}</td><td>${won(h.cost)}</td><td class="${cls(h.profit)}">${signed(h.profit)}</td><td class="${cls(h.profit)}">${h.profit_pct}%</td></tr>`).join('');
 
   if (typeof Chart === 'undefined') { $('#btChart').parentElement.innerHTML = '<p class="hint">차트 라이브러리를 불러오지 못했습니다 (인터넷 연결 확인). 수치와 표는 정상입니다.</p>'; return; }
   const css = getComputedStyle(document.documentElement), v = n => css.getPropertyValue(n).trim();
@@ -815,8 +844,8 @@ function gPreview() {
     .map(r => `<tr><td>${r.i + 1}</td><td>${num(r.b)}</td><td>${num(r.s)}</td><td>${r.p.toFixed(2)}% · ${won(krw * r.p / 100)}</td></tr>`).join('');
   const mc = (cfg.coins || []).map(c => c.coin);
   $('#gCoinHint').innerHTML = cfg.mode === 'live' && o.mode === 'live' && cfg.exchange === o.exchange && mc.includes(o.coin.trim().toUpperCase())
-    ? `<span class="neg">마틴봇이 같은 거래소에서 실전으로 쓰는 코인입니다. 마틴봇에서 먼저 정리·삭제해야 실전 저장이 됩니다.</span>`
-    : (mc.length ? `마틴봇 코인: ${mc.join(', ')} — 실전에서는 이 코인과 겹치지 않게` : '');
+    ? `<span class="neg">Martin Bot이 같은 거래소에서 실전으로 쓰는 코인입니다. Martin Bot에서 먼저 정리·삭제해야 실전 저장이 됩니다.</span>`
+    : (mc.length ? `Martin Bot 코인: ${mc.join(', ')} — 실전에서는 이 코인과 겹치지 않게` : '');
 }
 [...GCF.map(k => '#gc_' + k), '#gCountBy', '#gBudget'].forEach(id => $(id).addEventListener('input', gSync));
 async function gLoadConfig() {
@@ -875,8 +904,9 @@ $('#gClearForget').onclick = async () => {
 const G_ST = {idle: ['대기', ''], buy: ['매수 대기', 'acc'], hold: ['보유 (매도 준비)', 'warn'], sell: ['매도 대기', 'on']};
 async function gRefresh() {
   const s = gstat = await api('/api/grid/status'), t = s.total;
-  $('#gridPill').classList.toggle('hidden', !s.running && !s.stopping);
-  $('#gridPill').textContent = s.stopping ? 'Grid 정지 중' : `Grid ${s.coin} 실행 중`;
+  $('#gridPill').textContent = s.stopping ? 'Grid 정지 중' : s.running ? `Grid ${s.coin} 실행 중` : 'Grid 정지';
+  $('#gridPill').className = 'pill' + (s.running || s.stopping ? ' gridp' : '');
+  gRunning = s.running || s.stopping; updateAllBtns();
   if ($('#tab-grid').classList.contains('hidden')) return;
   $('#gRunPill').textContent = s.stopping ? '주문 취소 중…' : s.running ? '실행 중' : '정지';
   $('#gRunPill').className = 'pill' + (s.running ? ' on' : s.stopping ? ' warn' : '');

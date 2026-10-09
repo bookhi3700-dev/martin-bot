@@ -207,6 +207,9 @@ def close_position(pos, krw_received_net):
         "profit": round(profit),
         "profit_pct": round(profit / pos.cost * 100, 2) if pos.cost else 0,
         "started_at": pos.cycle_started_at,
+        "avg_price": pos.avg_price,                       # 매수 평단가 (수수료 포함)
+        "sell_price": krw_received_net / pos.volume if pos.volume else 0,  # 매도 단가 (수수료 뺀 실수령 기준)
+        "volume": pos.volume,
     }
     pos.__dict__.update(Position().__dict__)
     return result
@@ -217,7 +220,7 @@ def validate_coin(c):
     if c["base_amount"] < MIN_ORDER_KRW:
         errs.append(f"[{name}] 1단계 매수금액은 최소 {MIN_ORDER_KRW:,}원입니다.")
     if c["martin_multiplier"] < 1:
-        errs.append(f"[{name}] 마틴 배수는 1 이상이어야 합니다.")
+        errs.append(f"[{name}] Martin 배수는 1 이상이어야 합니다.")
     d = parse_drops(c["drop_steps"])
     if not d or any(not (0 < x < 100) for x in d):
         errs.append(f"[{name}] 단계별 하락폭은 0~100 사이 숫자를 쉼표로 적어주세요. 예: 5,5,7,10")

@@ -13,7 +13,7 @@ import math
 GRID_DEFAULTS = {
     "exchange": "coinone",        # upbit | bithumb | coinone
     "mode": "paper",              # paper(모의투자) | live(실전)
-    "access_key": "",             # 비우면 마틴봇 설정의 키를 사용 (같은 거래소일 때)
+    "access_key": "",             # 비우면 Martin Bot 설정의 키를 사용 (같은 거래소일 때)
     "secret_key": "",
     "coin": "BTC",
     "range_mode": "gap",          # gap(하단 + 칸 간격% + 칸 수 → 상단 자동) | range(하단·상단 직접 입력)
@@ -121,7 +121,7 @@ def validate(cfg, tick=0.0, min_krw=5000):
 
 
 def conflict_with_martin(grid_cfg, martin_cfg, from_martin=False):
-    """같은 거래소 같은 계좌에서 마틴봇과 그리드가 같은 코인을 실전 매매하지 못하게 막음"""
+    """같은 거래소 같은 계좌에서 Martin Bot과 그리드가 같은 코인을 실전 매매하지 못하게 막음"""
     if grid_cfg.get("mode") != "live" or martin_cfg.get("mode") != "live":
         return None
     if grid_cfg.get("exchange") != martin_cfg.get("exchange"):
@@ -129,10 +129,10 @@ def conflict_with_martin(grid_cfg, martin_cfg, from_martin=False):
     coin = (grid_cfg.get("coin") or "").upper()
     if coin in {c["coin"] for c in martin_cfg.get("coins", [])}:
         if from_martin:
-            return (f"{coin} 은(는) 그리드가 같은 거래소에서 실전 매매하는 코인이라 마틴봇에 넣을 수 없습니다. "
+            return (f"{coin} 은(는) 그리드가 같은 거래소에서 실전 매매하는 코인이라 Martin Bot에 넣을 수 없습니다. "
                     f"두 봇이 같은 코인을 쓰면 서로의 체결이 섞입니다.")
-        return (f"{coin} 은(는) 마틴봇이 같은 거래소에서 실전 매매하는 코인입니다. 두 봇이 같은 코인을 쓰면 서로의 체결이 섞입니다. "
-                f"마틴봇 설정에서 {coin} 을(를) 먼저 정리·삭제한 뒤 그리드를 실전으로 시작하세요.")
+        return (f"{coin} 은(는) Martin Bot이 같은 거래소에서 실전 매매하는 코인입니다. 두 봇이 같은 코인을 쓰면 서로의 체결이 섞입니다. "
+                f"Martin Bot 설정에서 {coin} 을(를) 먼저 정리·삭제한 뒤 그리드를 실전으로 시작하세요.")
     return None
 
 

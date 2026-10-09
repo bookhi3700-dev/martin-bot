@@ -184,7 +184,7 @@ class Bot:
         try:
             mode = "실전" if self.cfg["mode"] == "live" else "모의"
             requests.post(f"https://api.telegram.org/bot{t}/sendMessage",
-                          json={"chat_id": c, "text": f"[마틴봇·{mode}] {msg}"}, timeout=5)
+                          json={"chat_id": c, "text": f"[Martin·{mode}] {msg}"}, timeout=5)
         except Exception:
             pass
 
@@ -384,7 +384,7 @@ class Bot:
             with self.lock:
                 slot.log_trade("매도", act.reason, fill)
                 res = close_position(slot.pos, fill["krw"])
-                res.update(ended_at=now(), reason=act.reason)
+                res.update(ended_at=now(), reason=act.reason, sell_price=fill["price"])
                 slot.stats["cycles"] += 1
                 slot.stats["realized"] += res["profit"]
                 slot.stats["history"] = ([res] + slot.stats["history"])[:200]

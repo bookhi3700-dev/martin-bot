@@ -1,10 +1,10 @@
-"""그리드 자동매매 실행기 — 마틴봇과 같은 프로그램 안에서 별도 스레드로 동작
+"""그리드 자동매매 실행기 — Martin Bot과 같은 프로그램 안에서 별도 스레드로 동작
 
 안전장치
  - 주문마다 봇이 정한 ID(cid)를 붙이고, 주문을 보내기 '전에' 상태 파일에 저장합니다.
    전송 중 연결이 끊겨도 다음 확인 때 그 ID로 거래소에 조회해서 실제로 들어갔는지 판단합니다.
- - 자기가 낸 주문(ID)만 조회·취소합니다. 마틴봇 주문이나 직접 낸 주문은 건드리지 않습니다.
- - 같은 거래소·같은 키를 쓰는 마틴봇과는 주문 잠금(account_lock)을 공유해 서로 끼어들지 않습니다.
+ - 자기가 낸 주문(ID)만 조회·취소합니다. Martin Bot 주문이나 직접 낸 주문은 건드리지 않습니다.
+ - 같은 거래소·같은 키를 쓰는 Martin Bot과는 주문 잠금(account_lock)을 공유해 서로 끼어들지 않습니다.
 """
 import csv
 import json
@@ -277,7 +277,7 @@ class GridBot:
                         "중지 후 [정리]로 보유분을 매도하거나 기록을 비운 뒤 바꾸세요."]
             if merged["mode"] == "live" and not (merged["access_key"] or
                                                  (self.mb.cfg.get("exchange") == merged["exchange"] and self.mb.cfg.get("access_key"))):
-                return ["실전 모드는 API 키가 필요합니다. 그리드용 키를 넣거나, 마틴봇과 같은 거래소라면 마틴봇 설정의 키를 사용합니다."]
+                return ["실전 모드는 API 키가 필요합니다. 그리드용 키를 넣거나, Martin Bot과 같은 거래소라면 Martin Bot 설정의 키를 사용합니다."]
             errs = validate(merged, tick, min_krw) + self.check_conflict(merged)
             if errs:
                 return errs
