@@ -8,13 +8,14 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
 :root{
+  --home:#4f5d73;
   --bg:#eaeef3; --card:#fff; --ink:#17202b; --ink2:#465263; --muted:#768194; --line:#d9dfe7; --line2:#eef1f5;
   --martin:#3d55d6; --grid:#0d8a7d; --accent:var(--martin);
   --good:#138a4f; --bad:#c83a3a; --warn:#b26f0a; --chip:#f1f4f8; --zone:#e1e7ef; --navbg:#dde3eb; --head:#fff;
 }
 @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
   --bg:#0f1318; --card:#181d24; --ink:#e8ecf1; --ink2:#b4bcc8; --muted:#8a94a3; --line:#2a313b; --line2:#1f252d;
-  --martin:#8597f2; --grid:#3cc4b3; --good:#4cc38a; --bad:#f07a7a; --warn:#e3a646; --chip:#222831; --zone:#12171d; --navbg:#141920; --head:#181d24; } }
+  --martin:#8597f2; --grid:#3cc4b3; --home:#a3afc2; --good:#4cc38a; --bad:#f07a7a; --warn:#e3a646; --chip:#222831; --zone:#12171d; --navbg:#141920; --head:#181d24; } }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 "Pretendard Variable",Pretendard,-apple-system,"Malgun Gothic","Apple SD Gothic Neo",sans-serif;-webkit-font-smoothing:antialiased}
 header{display:flex;align-items:center;gap:8px;padding:12px 20px;border-bottom:1px solid var(--line);background:var(--card);position:sticky;top:0;z-index:5;flex-wrap:wrap}
@@ -163,10 +164,29 @@ input[readonly]{background:var(--chip)}
 .slidebody{display:grid;grid-template-rows:1fr;transition:grid-template-rows .32s ease}
 .slidebody > div{overflow:hidden;min-height:0}
 .slide.collapsed .slidebody{grid-template-rows:0fr}
+#tab-home{--dom:var(--home)}
+details.fs{background:var(--card);border:1px solid var(--line);border-radius:12px;margin:0 0 14px;overflow:hidden}
+details.fs > summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:11px 16px;
+  background:color-mix(in srgb,var(--dom) 8%,var(--card));color:var(--dom)}
+details.fs > summary::-webkit-details-marker{display:none}
+details.fs > summary::before{content:"▸";font-size:12px;transition:transform .2s}
+details.fs[open] > summary::before{transform:rotate(90deg)}
+details.fs[open] > summary{border-bottom:1px solid color-mix(in srgb,var(--dom) 18%,var(--line))}
+details.fs .fst{font-size:13px;font-weight:700}
+details.fs .fss{font-size:12.5px;color:var(--ink2);font-weight:500}
+details.fs > .row{margin:0 16px;padding:10px 0;border-bottom:1px solid var(--line2)}
+details.fs > .row:last-child{border-bottom:none}
+.hcols{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.hbot{border-top:3px solid var(--c)} .hbot.m{--c:var(--martin)} .hbot.g{--c:var(--grid)}
+.hbot .hh{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.hbot .hh h3{color:var(--c);font-size:17px;font-weight:750}
+.hbot table td,.hbot table th{padding:5px 6px}
+.hbot .mini{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
+@media (max-width:800px){ .hcols{grid-template-columns:1fr} }
 header .allbtn{background:linear-gradient(90deg,var(--martin),var(--grid));border:none}
 @media (max-width:600px){ nav{overflow-x:auto;flex-wrap:nowrap} nav .grp{flex:none} nav .grp .gl{display:none} fieldset > .row,fieldset > details{margin:0 12px} }
 @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) button.primary, :root:not([data-theme="light"]) nav .grp button.act{color:#0f1318} }
-nav .grp.g .gl{padding-right:4px}
+nav .grp.h{--c:var(--home)}
 @media (prefers-reduced-motion:reduce){ *{transition:none!important;scroll-behavior:auto!important} }
 </style>
 </head>
@@ -182,21 +202,37 @@ nav .grp.g .gl{padding-right:4px}
   <button id="btnLogout" class="hidden">로그아웃</button>
 </header>
 <nav>
+  <div class="grp h">
+    <button data-tab="home" class="act">대시보드</button>
+  </div>
   <div class="grp"><span class="gl">Martin</span>
-    <button data-tab="dash" class="act">현황</button>
+    <button data-tab="dash">현황</button>
     <button data-tab="settings">설정</button>
     <button data-tab="bt">백테스트</button>
   </div>
-  <div class="grp g"><span class="gl" title="Grid"></span>
-    <button data-tab="grid">Grid</button>
-    <button data-tab="gridset">Set up</button>
+  <div class="grp g"><span class="gl">Grid</span>
+    <button data-tab="grid">현황</button>
+    <button data-tab="gridset">설정</button>
   </div>
 </nav>
 <main>
   <div id="globalErr" class="err"></div>
 
   <!-- ================= 현황 ================= -->
-  <section id="tab-dash">
+  <!-- ================= 대시보드 ================= -->
+  <section id="tab-home">
+    <div class="grid" id="hTotals"></div>
+    <div class="hcols">
+      <div class="card hbot m" id="hMartin"></div>
+      <div class="card hbot g" id="hGrid"></div>
+    </div>
+    <h2>누적 실현 수익</h2>
+    <div class="card"><div class="chartbox" style="height:260px"><canvas id="hChart"></canvas></div></div>
+    <h2>최근 완료된 매매</h2>
+    <div class="card tablewrap"><table id="hRecent"><thead><tr><th>시각</th><th>봇</th><th>코인</th><th>내용</th><th>매수</th><th>매도</th><th>수익</th></tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <section id="tab-dash" class="hidden">
     <div class="card mbar">
       <h3>Martin</h3>
       <span id="mRunPill" class="pill">정지</span>
@@ -217,7 +253,7 @@ nav .grp.g .gl{padding-right:4px}
 
   <!-- ================= 설정 ================= -->
   <section id="tab-settings" class="hidden">
-    <fieldset><legend>거래소·공통</legend>
+    <details class="fs" id="mCommon"><summary><span class="fst">거래소·공통</span><span class="fss" id="mCommonSum"></span></summary>
       <div class="row"><label>실행 모드</label><select id="g_mode"><option value="paper">모의투자 (실제 주문 안 함)</option><option value="live">실전 (실제 주문)</option></select></div>
       <div class="row"><label>거래소</label><select id="g_exchange"><option value="upbit">업비트</option><option value="bithumb">빗썸</option><option value="coinone">코인원</option></select></div>
       <div class="row"><label>Access Key</label><input id="g_access_key" autocomplete="off" placeholder="실전 모드에서만 필요"></div>
@@ -231,7 +267,7 @@ nav .grp.g .gl{padding-right:4px}
       <div class="row"><label>슬리피지 (%)</label><input id="g_slippage_pct" type="number" min="0" step="0.05"><div class="hint">백테스트용 — 시장가 주문이 원하는 가격보다 불리하게 체결되는 정도</div></div>
       <div class="row"><label>텔레그램 봇 토큰</label><input id="g_telegram_token" autocomplete="off" placeholder="선택 — 매수/매도/오류 알림"></div>
       <div class="row"><label>텔레그램 chat_id</label><input id="g_telegram_chat_id" autocomplete="off"></div>
-    </fieldset>
+    </details>
 
     <div class="coinzone">
     <h2>코인별 규칙</h2>
@@ -334,7 +370,7 @@ nav .grp.g .gl{padding-right:4px}
     <h2>Grid 로그</h2>
     <div class="card logs" id="gLogs"></div>
 
-    <p style="margin-top:14px"><button type="button" id="gGoSet">Set up에서 설정 바꾸기</button></p>
+    <p style="margin-top:14px"><button type="button" id="gGoSet">Grid 설정 바꾸기</button></p>
   </section>
 
   <!-- ================= Grid Set up ================= -->
@@ -342,14 +378,14 @@ nav .grp.g .gl{padding-right:4px}
     <div class="note">Grid는 <b>"이 가격에 사서, 칸 간격만큼 오르면 판다"</b>를 계단처럼 여러 칸 깔아두는 방식입니다.
       예) 하단 1억 4천만 원 · 간격 1% · 13칸 · 칸당 10만 원 → 1억 4천만 원부터 1%씩 내려갈 때마다 10만 원어치를 사고, 산 가격에서 1% 오르면 팝니다.</div>
 
-    <fieldset style="margin-top:12px"><legend>공통 — 거래소·계좌</legend>
+    <details class="fs" id="gCommon" style="margin-top:12px"><summary><span class="fst">공통 — 거래소·계좌</span><span class="fss" id="gCommonSum"></span></summary>
       <div class="row"><label>실행 모드</label><select id="gc_mode"><option value="paper">모의투자 (실제 주문 안 함)</option><option value="live">실전 (실제 주문)</option></select></div>
       <div class="row"><label>거래소</label><select id="gc_exchange"><option value="coinone">코인원</option><option value="upbit">업비트</option><option value="bithumb">빗썸</option></select><div class="hint" id="gExHint"></div></div>
       <div class="row"><label>수수료 (%)</label><input id="gc_fee_pct" type="number" min="0" step="0.01"><div class="hint">지정가(메이커) 기준 본인 수수료율. 거래소 앱에서 확인하세요 — 칸 수익 계산·모의투자·백테스트에 씁니다</div></div>
       <div class="row"><label>시세 확인 주기 (초)</label><input id="gc_check_interval_sec" type="number" min="3" step="1"></div>
       <div class="row"><label>Grid용 Access Key</label><input id="gc_access_key" autocomplete="off" placeholder="비우면 Martin Bot 설정의 키 사용 (같은 거래소일 때)"></div>
       <div class="row"><label>Grid용 Secret Key</label><input id="gc_secret_key" type="password" autocomplete="off"><div class="hint">따로 발급하면 거래소 앱에서 어느 봇 주문인지 구분하기 쉽습니다. 출금 권한은 끄세요.</div></div>
-    </fieldset>
+    </details>
 
     <div class="coinzone">
       <h2>코인별 격자</h2>
@@ -364,7 +400,7 @@ nav .grp.g .gl{padding-right:4px}
     </div>
 
     <div class="stick">
-      <button type="button" class="primary" id="gSave">Set up 저장</button>
+      <button type="button" class="primary" id="gSave">Grid 설정 저장</button>
       <span id="gCfgOk" class="hint"></span>
     </div>
     <div id="gCfgErr" class="err"></div>
@@ -418,7 +454,8 @@ function showErr(el, errs) { el.style.display = errs && errs.length ? 'block' : 
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
   document.querySelectorAll('nav button').forEach(x => x.classList.toggle('act', x === b));
   window.scrollTo({top: 0});
-  ['dash', 'settings', 'bt', 'grid', 'gridset'].forEach(t => $('#tab-' + t).classList.toggle('hidden', t !== b.dataset.tab));
+  ['home', 'dash', 'settings', 'bt', 'grid', 'gridset'].forEach(t => $('#tab-' + t).classList.toggle('hidden', t !== b.dataset.tab));
+  if (b.dataset.tab === 'home') hRender();
   if (b.dataset.tab === 'grid') gRefresh();
   if (b.dataset.tab === 'gridset') gSyncAll();
 });
@@ -511,6 +548,7 @@ async function loadConfig() {
   cfg.coins.forEach((c, i) => box.appendChild(coinEditor(c, cfg.coins.length === 1)));
   $('#btCoin').innerHTML = cfg.coins.map(c => `<option>${esc(c.coin)}</option>`).join('');
   updateBudgetHint();
+  mCommonSum();
   if (typeof mWarnAll === 'function') { mWarnAll(); gEds().forEach(gSyncEd); }
 }
 $('#addCoinSel').onchange = () => $('#addCoinTxt').classList.toggle('hidden', $('#addCoinSel').value !== '_');
@@ -605,6 +643,7 @@ function coinCard(c, running) {
 const openDetails = new Set();
 async function refresh() {
   const s = await api('/api/status'), t = s.total;
+  mstat = s;
   $('#btnLogout').classList.toggle('hidden', !s.auth);
   const mCoins = s.coins.filter(c => c.enabled && !c.paused).map(c => c.coin);
   $('#runPill').textContent = s.running ? `Martin 실행 중 · ${mCoins.join(', ') || '켜진 코인 없음'}` : 'Martin 정지';
@@ -639,6 +678,7 @@ async function refresh() {
     <td>${h.avg_price ? num(h.avg_price) : '-'}</td><td>${h.sell_price ? num(h.sell_price) : '-'}</td><td>${won(h.cost)}</td>
     <td class="${cls(h.profit)}">${signed(h.profit)} (${h.profit_pct}%)</td></tr>`).join('') || '<tr><td colspan="8" class="hint">아직 없음</td></tr>';
   $('#logs').textContent = s.logs.join('\n');
+  hRender();
 }
 
 // ---------------- 결과 패널 (접기·펼치기·닫기) ----------------
@@ -839,7 +879,7 @@ function gridOverlap(coin, mexch, mmode) {
   if (!coin || gcfg.exchange !== mexch || !gc.includes(coin)) return null;
   const block = gcfg.mode === 'live' && mmode === 'live';
   return {block, text: block
-    ? `Grid가 같은 거래소(${EXN[mexch]})에서 ${coin}을(를) 실전으로 쓰고 있어 Martin 실전으로는 저장할 수 없습니다. Grid Set up에서 ${coin}을(를) 먼저 정리·삭제하세요.`
+    ? `Grid가 같은 거래소(${EXN[mexch]})에서 ${coin}을(를) 실전으로 쓰고 있어 Martin 실전으로는 저장할 수 없습니다. Grid 설정에서 ${coin}을(를) 먼저 정리·삭제하세요.`
     : `Grid도 같은 거래소(${EXN[mexch]})에서 ${coin}을(를) 쓰고 있습니다. 모의투자는 괜찮지만, 둘 다 실전이면 같은 코인을 함께 쓸 수 없습니다.`};
 }
 function mWarn(d) {
@@ -966,7 +1006,7 @@ async function gLoadConfig() {
   GG.forEach(k => $('#gc_' + k).value = gcfg[k] ?? '');
   const box = $('#gEditors'); box.innerHTML = '';
   gcfg.coins.forEach(c => box.appendChild(gEditor(c, gcfg.coins.length === 1)));
-  gSyncAll(); mWarnAll();
+  gSyncAll(); mWarnAll(); gCommonSum();
 }
 $('#gAddSel').onchange = () => $('#gAddTxt').classList.toggle('hidden', $('#gAddSel').value !== '_');
 $('#gAddBtn').onclick = () => {
@@ -1064,6 +1104,7 @@ async function gRefresh() {
   $('#gridPill').textContent = s.stopping ? 'Grid 정지 중' : s.running ? `Grid 실행 중 · ${runCoins.join(', ')}` : 'Grid 정지';
   $('#gridPill').className = 'pill' + (s.running || s.stopping ? ' gridp' : '');
   gRunning = s.running || s.stopping; updateAllBtns();
+  hRender();
   if ($('#tab-grid').classList.contains('hidden')) return;
   $('#gRunPill').textContent = s.stopping ? '주문 취소 중…' : s.running ? '실행 중' : '정지';
   $('#gRunPill').className = 'pill' + (s.running ? ' gridp' : s.stopping ? ' warn' : '');
@@ -1080,7 +1121,7 @@ async function gRefresh() {
   document.querySelectorAll('#gCoins details[data-gc]').forEach(d => d.open ? gOpen.add(d.dataset.gc) : gOpen.delete(d.dataset.gc));
   if (gFirst && s.coins.length === 1) gOpen.add(s.coins[0].coin);
   gFirst = false;
-  $('#gCoins').innerHTML = s.coins.map(c => gCoinCard(c, s)).join('') || '<div class="card hint">Set up에서 코인을 추가하세요.</div>';
+  $('#gCoins').innerHTML = s.coins.map(c => gCoinCard(c, s)).join('') || '<div class="card hint">Grid 설정에서 코인을 추가하세요.</div>';
   document.querySelectorAll('#gCoins details[data-gc]').forEach(d => { if (gOpen.has(d.dataset.gc)) d.open = true; });
   document.querySelectorAll('[data-gclear]').forEach(b => b.onclick = async () => {
     const coin = b.dataset.coin, sell = b.dataset.gclear === 'sell';
@@ -1183,6 +1224,107 @@ function gRenderSweep(r) {
     d.scrollIntoView({behavior: 'smooth', block: 'start'});
   });
 }
+
+// ================= 공통 설정 접기 + 요약 =================
+document.querySelectorAll('details.fs').forEach(d => {
+  try { if (localStorage.getItem('fs:' + d.id) === '1') d.open = true; } catch (e) {}
+  d.addEventListener('toggle', () => { try { localStorage.setItem('fs:' + d.id, d.open ? '1' : '0'); } catch (e) {} });
+});
+function mCommonSum() {
+  const live = $('#g_mode').value === 'live', key = $('#g_access_key').value, tb = +$('#g_total_budget').value;
+  $('#mCommonSum').innerHTML = `<b class="${live ? 'neg' : ''}">${live ? '실전' : '모의투자'}</b> · ${EXN[$('#g_exchange').value]} · 수수료 ${$('#g_fee_pct').value}% · 확인 ${$('#g_check_interval_sec').value}초 · 전체 한도 ${tb > 0 ? won(tb) : '없음'} · API 키 ${key ? '등록' : '없음'} · 텔레그램 ${$('#g_telegram_chat_id').value ? '켜짐' : '꺼짐'}`;
+}
+function gCommonSum() {
+  const live = $('#gc_mode').value === 'live';
+  $('#gCommonSum').innerHTML = `<b class="${live ? 'neg' : ''}">${live ? '실전' : '모의투자'}</b> · ${EXN[$('#gc_exchange').value]} · 수수료 ${$('#gc_fee_pct').value}% · 확인 ${$('#gc_check_interval_sec').value}초 · API 키 ${$('#gc_access_key').value ? 'Grid 전용' : 'Martin 키 사용'}`;
+}
+$('#mCommon').addEventListener('input', mCommonSum);
+$('#gCommon').addEventListener('input', gCommonSum);
+
+// ================= 대시보드 =================
+let mstat = null, hChart = null, hChartKey = '';
+function todayStr() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+function hRender() {
+  if ($('#tab-home').classList.contains('hidden') || !mstat || !gstat) return;
+  const m = mstat, g = gstat, mt = m.total, gt = g.total;
+  const ev = [...m.coins.flatMap(c => c.stats.history.map(h => ({bot: 'M', coin: c.coin, at: h.ended_at, profit: h.profit,
+                  what: `${h.steps}단계 · ${h.reason}`, buy: h.avg_price, sell: h.sell_price}))),
+              ...g.coins.flatMap(c => c.stats.history.map(h => ({bot: 'G', coin: c.coin, at: h.at, profit: h.profit,
+                  what: h.reason ? `${h.reason} (보유 전체)` : `${h.cell}칸 왕복`, buy: h.buy, sell: h.sell})))]
+    .filter(e => e.at).sort((a, b) => String(a.at).localeCompare(String(b.at)));
+  const today = todayStr(), tev = ev.filter(e => String(e.at).startsWith(today));
+  const tM = tev.filter(e => e.bot === 'M').reduce((a, e) => a + e.profit, 0), tG = tev.filter(e => e.bot === 'G').reduce((a, e) => a + e.profit, 0);
+  const realized = mt.realized + gt.realized, unreal = (mt.pnl || 0) + (gt.unrealized || 0);
+  const working = mt.cost + gt.hold_cost + gt.buy_orders_krw;
+  $('#hTotals').innerHTML = [
+    ['오늘 실현 수익', `<span class="${cls(tM + tG)}">${signed(tM + tG)}</span>`, `Martin ${signed(tM)} · Grid ${signed(tG)} · ${tev.length}건`],
+    ['누적 실현 수익', `<span class="${cls(realized)}">${signed(realized)}</span>`, `Martin ${signed(mt.realized)} · Grid ${signed(gt.realized)}`],
+    ['지금 평가손익', `<span class="${cls(unreal)}">${signed(unreal)}</span>`, `Martin ${signed(mt.pnl)} · Grid ${signed(gt.unrealized)}`],
+    ['운용 중인 원화', won(working), `Martin 투입 ${won(mt.cost)} · Grid 보유 ${won(gt.hold_cost)} · 주문 ${won(gt.buy_orders_krw)}`],
+  ].map(([k, v, sub]) => `<div class="card stat"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${sub}</div></div>`).join('');
+
+  const mode = x => x === 'live' ? '<span class="pill live">실전</span>' : '<span class="pill">모의투자</span>';
+  const mRows = m.coins.map(c => {
+    const p = c.position, st = !c.enabled ? '꺼짐' : c.paused ? '<span class="neg">일시정지</span>' : m.running ? '매매 중' : '정지';
+    return `<tr><td><b>${esc(c.coin)}</b></td><td>${st}</td><td>${p.step ? `${p.step}/${c.max_steps}단계` : '-'}</td>
+      <td class="${cls(p.pnl)}">${p.step ? signed(p.pnl) : '-'}</td><td class="${cls(c.stats.realized)}">${signed(c.stats.realized)} <small class="hint">${c.stats.cycles}회</small></td></tr>`;
+  }).join('');
+  $('#hMartin').innerHTML = `<div class="hh"><h3>Martin</h3><span class="pill ${m.running ? 'martinp' : ''}">${m.running ? '실행 중' : '정지'}</span>${mode(m.mode)}<span class="pill">${EXN[m.exchange] || ''}</span>
+      <span class="spacer"></span><button class="small" data-go="dash">현황 보기</button></div>
+    <div class="mini">
+      <div><span class="k">누적 실현</span><span class="v ${cls(mt.realized)}">${signed(mt.realized)} <small>${mt.cycles}사이클</small></span></div>
+      <div><span class="k">평가손익</span><span class="v ${cls(mt.pnl)}">${signed(mt.pnl)}</span></div>
+      <div><span class="k">투입금</span><span class="v">${won(mt.cost)}</span></div>
+    </div>
+    <div class="tablewrap"><table><thead><tr><th>코인</th><th>상태</th><th>진행</th><th>평가손익</th><th>실현</th></tr></thead><tbody>${mRows || '<tr><td colspan="5" class="hint">코인 없음</td></tr>'}</tbody></table></div>`;
+  const gRows = g.coins.map(c => {
+    const cells = c.cells, held = cells.filter(x => x.st === 'hold' || x.st === 'sell').length;
+    const st = !c.enabled ? '꺼짐' : c.paused ? '<span class="neg">일시정지</span>' : !g.running ? '정지'
+      : (cells.length && c.price && !c.total.in_range ? '<span style="color:var(--warn)">범위 밖</span>' : '실행 중');
+    return `<tr><td><b>${esc(c.coin)}</b></td><td>${st}</td><td>${cells.length ? `${held}/${cells.length}칸 보유` : '-'}</td>
+      <td class="${cls(c.total.unrealized)}">${c.total.hold_qty ? signed(c.total.unrealized) : '-'}</td><td class="${cls(c.stats.realized)}">${signed(c.stats.realized)} <small class="hint">${c.stats.round_trips}회</small></td></tr>`;
+  }).join('');
+  $('#hGrid').innerHTML = `<div class="hh"><h3>Grid</h3><span class="pill ${g.running ? 'gridp' : ''}">${g.stopping ? '정지 중' : g.running ? '실행 중' : '정지'}</span>${mode(g.mode)}<span class="pill">${EXN[g.exchange] || ''}</span>
+      <span class="spacer"></span><button class="small" data-go="grid">현황 보기</button></div>
+    <div class="mini">
+      <div><span class="k">누적 실현</span><span class="v ${cls(gt.realized)}">${signed(gt.realized)} <small>${gt.round_trips}회 왕복</small></span></div>
+      <div><span class="k">평가손익</span><span class="v ${cls(gt.unrealized)}">${signed(gt.unrealized)}</span></div>
+      <div><span class="k">보유 + 매수 주문</span><span class="v">${won(gt.hold_cost + gt.buy_orders_krw)}</span></div>
+    </div>
+    <div class="tablewrap"><table><thead><tr><th>코인</th><th>상태</th><th>격자</th><th>평가손익</th><th>실현</th></tr></thead><tbody>${gRows || '<tr><td colspan="5" class="hint">코인 없음</td></tr>'}</tbody></table></div>`;
+  document.querySelectorAll('#tab-home [data-go]').forEach(b => b.onclick = () => document.querySelector(`nav button[data-tab="${b.dataset.go}"]`).click());
+
+  $('#hRecent tbody').innerHTML = ev.slice(-12).reverse().map(e => `<tr><td>${esc(e.at).slice(5, 16)}</td>
+    <td><span class="pill ${e.bot === 'M' ? 'martinp' : 'gridp'}">${e.bot === 'M' ? 'Martin' : 'Grid'}</span></td><td>${esc(e.coin)}</td><td>${esc(e.what)}</td>
+    <td>${e.buy ? num(e.buy) : '-'}</td><td>${e.sell ? num(e.sell) : '-'}</td><td class="${cls(e.profit)}">${signed(e.profit)}</td></tr>`).join('')
+    || '<tr><td colspan="7" class="hint">아직 완료된 매매가 없습니다. 봇을 시작하면 여기에 쌓입니다.</td></tr>';
+
+  const key = ev.length + '|' + (ev.length ? ev[ev.length - 1].at : '') + '|' + document.documentElement.dataset.theme;
+  if (key === hChartKey) return;
+  hChartKey = key;
+  if (!$('#hChart')) return;
+  const box = $('#hChart').parentElement;
+  if (typeof Chart === 'undefined') { box.innerHTML = '<p class="hint">차트 라이브러리를 불러오지 못했습니다 (인터넷 연결 확인).</p>'; return; }
+  if (!ev.length) { if (hChart) { hChart.destroy(); hChart = null; } return; }
+  let cm = 0, cg = 0;
+  const labels = [], sm = [], sg = [], st = [];
+  ev.forEach(e => { e.bot === 'M' ? cm += e.profit : cg += e.profit; labels.push(String(e.at).slice(5, 16)); sm.push(cm); sg.push(cg); st.push(cm + cg); });
+  const css = getComputedStyle(document.documentElement), v = n => css.getPropertyValue(n).trim();
+  if (hChart) hChart.destroy();
+  hChart = new Chart($('#hChart'), {
+    type: 'line',
+    data: {labels, datasets: [
+      {label: '합계', data: st, borderColor: v('--ink2'), borderWidth: 2.5, pointRadius: 0, stepped: true},
+      {label: 'Martin', data: sm, borderColor: v('--martin'), borderWidth: 1.8, pointRadius: 0, stepped: true},
+      {label: 'Grid', data: sg, borderColor: v('--grid'), borderWidth: 1.8, pointRadius: 0, stepped: true},
+    ]},
+    options: {maintainAspectRatio: false, animation: false, interaction: {mode: 'index', intersect: false},
+      scales: {x: {ticks: {maxTicksLimit: 8, color: v('--muted')}, grid: {display: false}},
+               y: {ticks: {color: v('--muted'), callback: x => x.toLocaleString('ko-KR')}, grid: {color: v('--line')}}},
+      plugins: {legend: {labels: {color: v('--ink2')}}, tooltip: {callbacks: {label: c => `${c.dataset.label} ${signed(c.parsed.y)}`}}}}
+  });
+}
+
 gLoadConfig().then(gRefresh);
 setInterval(gRefresh, 3000);
 </script>

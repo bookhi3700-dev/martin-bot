@@ -720,7 +720,7 @@ class GridBot:
                 return ["Grid가 이미 실행 중이거나 정지 처리 중입니다."]
             slots = self.enabled_slots()
             if not slots:
-                return ["켜진 Grid 코인이 없습니다. Set up에서 코인을 켜주세요."]
+                return ["켜진 Grid 코인이 없습니다. Grid 설정에서 코인을 켜주세요."]
             errs = []
             for s in slots:
                 if not s.state.get("paused"):
