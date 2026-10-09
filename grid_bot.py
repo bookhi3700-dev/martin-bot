@@ -22,7 +22,7 @@ from datetime import datetime
 import requests
 
 from exchanges import (exchange_class, ExchangeError, OrderUnconfirmed, OrderNotFound, Paper, floor_step)
-from grid_strategy import (GRID_GLOBAL_DEFAULTS, GRID_COIN_DEFAULTS, build_levels, new_cells,
+from grid_strategy import (GRID_GLOBAL_DEFAULTS, GRID_COIN_DEFAULTS, build_levels, new_cells, buy_window,
                            can_place_buy, validate, summary, conflict_with_martin, apply_range_mode)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -33,7 +33,7 @@ os.makedirs(DATA_DIR, exist_ok=True)
 SECRET_KEYS = ("access_key", "secret_key")
 COIN_LEVEL_KEYS = ("lower", "upper", "grids", "spacing", "krw_per_grid", "range_mode", "gap_pct")
 LIVE_EDITABLE_GLOBAL = ("check_interval_sec", "fee_pct")
-LIVE_EDITABLE_COIN = ("stop_loss_enabled", "stop_loss_price")
+LIVE_EDITABLE_COIN = ("stop_loss_enabled", "stop_loss_price", "max_buy_orders")
 MAX_PLACE_PER_TICK = 8
 MAX_COINS = 10
 
@@ -283,18 +283,42 @@ class GridCoin:
             if c["st"] == "hold" and self.bot.running:
                 self._place_sell(ex, c, mi)
 
-        # 3) 현재가 아래 빈 칸에 매수 (현재가에 가까운 칸부터, 한 번에 최대 8개)
+        # 3) 현재가에서 먼 매수 주문은 풀기 (미리 걸어둘 매수 수를 정했을 때)
+        place_ok, keep = buy_window(cells, price, tick, int(cfg.get("max_buy_orders") or 0))
+        for i, c in enumerate(cells):
+            if c["st"] == "buy" and c["ok"] and i not in keep and self.bot.running:
+                self._release_buy(ex, c)
+
+        # 4) 현재가 아래 빈 칸에 매수 (현재가에 가까운 칸부터, 한 번에 최대 8개)
         if time.time() < self.bot.krw_short_until:
             return
         placed = 0
         for i in range(len(cells) - 1, -1, -1):
             if placed >= MAX_PLACE_PER_TICK or not self.bot.running:
                 break
-            if can_place_buy(cells, i, price, tick):
+            if i in place_ok and can_place_buy(cells, i, price, tick):
                 if self._place_buy(ex, cells[i], mi):
                     placed += 1
                 elif time.time() < self.bot.krw_short_until:
                     break
+
+    def _release_buy(self, ex, c):
+        """현재가에서 멀어진 매수 주문 취소 → 묶인 원화를 풂. 가격이 다시 내려오면 그때 다시 겁니다"""
+        try:
+            ex.cancel_order(c["cid"], self.market)
+            o = ex.get_order(c["cid"], self.market)
+        except OrderNotFound:
+            return
+        except (ExchangeError, requests.RequestException) as e:
+            self.warn_once("release", f"⚠ 먼 칸 매수 주문 취소 실패: {e}", every=300)
+            return
+        if o["state"] == "open":
+            return          # 취소가 아직 반영 안 됨 → 다음 확인 때 다시
+        with self.bot.lock:
+            self._absorb(c, o)      # 그 사이 체결됐으면 보유로, 아니면 빈 칸으로
+            self.save()
+        if o["qty"] <= 0:
+            self.warn_once(f"rel{c['i']}", f"{c['i'] + 1}칸 매수 주문 해제 (현재가에서 멀어져 원화를 풂)", every=60)
 
     def _new_cid(self):
         return "grd-" + uuid.uuid4().hex[:24]
@@ -502,6 +526,7 @@ class GridCoin:
         tick = (st.get("minfo") or {}).get("tick", 0.0)
         return {
             "coin": self.coin, "enabled": cfg["enabled"], "price": price, "paused": st.get("paused", ""),
+            "max_buy_orders": int(cfg.get("max_buy_orders") or 0),
             "cells": [{k: c.get(k) for k in ("i", "buy", "sell", "st", "qty", "cost", "at")} for c in cells],
             "stats": st["stats"],
             "total": {"hold_qty": qty, "hold_cost": cost, "value": value, "unrealized": unreal, "buy_orders_krw": buy_krw,

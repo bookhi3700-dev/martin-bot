@@ -5,7 +5,7 @@
  - 캔들 안에서 새로 건 주문(매수 체결 후 건 매도, 매도 체결 후 다시 건 매수)은 다음 캔들부터 체결될 수 있습니다
  - 지정가는 주문 가격 그대로 체결, 매수·매도 모두 수수료를 뺍니다
 """
-from grid_strategy import build_levels, new_cells, can_place_buy, cell_profit_pct, apply_range_mode
+from grid_strategy import build_levels, new_cells, can_place_buy, cell_profit_pct, apply_range_mode, buy_window
 
 
 def run_grid_backtest(candles, cfg, tick=0.0, detail=True):
@@ -22,17 +22,24 @@ def run_grid_backtest(candles, cfg, tick=0.0, detail=True):
     trips = 0
     worst_unreal = 0.0
     max_locked = 0.0
+    max_buy_locked = 0.0
     stop_hit = None
     sl = cfg["stop_loss_price"] if cfg.get("stop_loss_enabled") else 0
     daily, last_day = [], None
     trips_by_cell = [0] * n
 
+    max_orders = int(cfg.get("max_buy_orders") or 0)
+
     def place(k, close):
         for c in cells:
             if c["st"] == "hold":
                 c["st"], c["pk"] = "sell", k
+        place_ok, keep = buy_window(cells, close, tick, max_orders)
+        for i, c in enumerate(cells):
+            if c["st"] == "buy" and i not in keep:
+                c["st"] = "idle"
         for i in range(n - 1, -1, -1):
-            if can_place_buy(cells, i, close, tick):
+            if i in place_ok and can_place_buy(cells, i, close, tick):
                 cells[i]["st"], cells[i]["pk"] = "buy", k
 
     place(-1, candles[0]["o"])
@@ -79,8 +86,9 @@ def run_grid_backtest(candles, cfg, tick=0.0, detail=True):
         hq, hc = sum(c["qty"] for c in hold), sum(c["cost"] for c in hold)
         unreal = hq * cl * (1 - fee) - hc
         worst_unreal = min(worst_unreal, unreal)
-        locked = hc + sum(krw for c in cells if c["st"] == "buy")
-        max_locked = max(max_locked, locked)
+        buy_locked = sum(krw for c in cells if c["st"] == "buy")
+        max_buy_locked = max(max_buy_locked, buy_locked)
+        max_locked = max(max_locked, hc + buy_locked)
         day = cd["kst"][:10]
         if detail and day != last_day:
             daily.append([day, round(realized), round(realized + unreal), cl])
@@ -107,7 +115,7 @@ def run_grid_backtest(candles, cfg, tick=0.0, detail=True):
         "annual_pct": round(total / budget * 100 * 365 / days, 1),
         "buy_hold_pct": round(bh_pct, 2), "buy_hold_pnl": round(budget * bh_pct / 100),
         "worst_unrealized": round(worst_unreal), "worst_unrealized_pct": round(worst_unreal / budget * 100, 1),
-        "max_locked": round(max_locked),
+        "max_locked": round(max_locked), "max_buy_locked": round(max_buy_locked),
         "in_range_pct": round(in_range / max(1, k + 1) * 100, 1),
         "stopped_at": stop_hit,
     }

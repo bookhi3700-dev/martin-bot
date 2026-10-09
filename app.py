@@ -354,7 +354,7 @@ def grid_backtest():
     for k in ("lower", "upper", "fee_pct", "gap_pct"):
         if body.get(k) not in (None, ""):
             cfg[k] = float(body[k])
-    for k in ("grids", "krw_per_grid"):
+    for k in ("grids", "krw_per_grid", "max_buy_orders"):
         if body.get(k) not in (None, ""):
             cfg[k] = int(float(body[k]))
     if body.get("spacing") in ("geom", "arith"):

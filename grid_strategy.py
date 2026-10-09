@@ -27,6 +27,7 @@ GRID_DEFAULTS = {
     "check_interval_sec": 5,
     "stop_loss_enabled": False,   # 손절: 이 가격 아래로 내려가면 그리드 주문 취소 + 보유분 시장가 매도 + 중지
     "stop_loss_price": 0.0,
+    "max_buy_orders": 0,          # 미리 걸어둘 매수 주문 수 (현재가에 가까운 칸부터). 0 = 아래 칸 전부
 }
 
 # 공통 설정(거래소·계좌 단위) / 코인별 설정 구분
@@ -107,6 +108,8 @@ def validate(cfg, tick=0.0, min_krw=5000):
         errs.append("수수료(%) 값이 올바르지 않습니다.")
     if cfg["check_interval_sec"] < 3:
         errs.append("시세 확인 주기는 3초 이상이어야 합니다.")
+    if not (0 <= int(cfg.get("max_buy_orders", 0)) <= MAX_GRIDS):
+        errs.append("미리 걸어둘 매수 주문 수는 0~100 사이로 입력하세요 (0 = 전부).")
     if cfg["stop_loss_enabled"]:
         if cfg["stop_loss_price"] <= 0:
             errs.append("손절 가격을 입력하세요.")
@@ -144,6 +147,18 @@ def conflict_with_martin(grid_cfg, martin_cfg, from_martin=False):
 def new_cells(levels):
     return [{"i": i, "buy": levels[i], "sell": levels[i + 1], "st": "idle", "cid": "", "ok": False,
              "qty": 0.0, "cost": 0.0, "at": ""} for i in range(len(levels) - 1)]
+
+
+def buy_window(cells, price, tick, max_orders):
+    """매수 주문을 걸어도 되는 칸(place)과, 이미 걸린 매수를 유지할 칸(keep).
+    현재가 바로 아래부터 비어 있거나 매수 대기인 칸을 차례로 셉니다. max_orders=0 이면 전부.
+    유지 범위는 1칸 더 넓게 둬서, 가격이 칸 경계에서 오르내릴 때 주문을 걸었다 취소했다 반복하지 않게 합니다."""
+    gap = max(tick, price * 1e-6)
+    below = [i for i in range(len(cells) - 1, -1, -1)
+             if cells[i]["buy"] <= price - gap and cells[i]["st"] in ("idle", "buy")]
+    if max_orders <= 0:
+        return set(below), set(below)
+    return set(below[:max_orders]), set(below[:max_orders + 1])
 
 
 def can_place_buy(cells, i, price, tick):
