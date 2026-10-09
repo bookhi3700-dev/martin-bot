@@ -155,6 +155,14 @@ input[readonly]{background:var(--chip)}
 .mini > div{background:var(--chip);border-radius:9px;padding:8px 11px;display:flex;flex-direction:column;gap:1px}
 .mini .k{font-size:12px;color:var(--muted)} .mini .v{font-weight:650;font-variant-numeric:tabular-nums} .mini small{color:var(--muted);font-weight:500}
 .clearrow{margin:10px 0 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.slide{margin-top:16px;border:1px solid color-mix(in srgb,var(--dom) 30%,var(--line));border-radius:14px;
+  background:color-mix(in srgb,var(--dom) 4%,var(--bg));padding:6px 14px 14px}
+.slidehead{display:flex;align-items:center;gap:8px;position:sticky;top:58px;z-index:3;padding:6px 0;
+  background:color-mix(in srgb,var(--dom) 4%,var(--bg))}
+.slidehead h2{margin:4px 0}
+.slidebody{display:grid;grid-template-rows:1fr;transition:grid-template-rows .32s ease}
+.slidebody > div{overflow:hidden;min-height:0}
+.slide.collapsed .slidebody{grid-template-rows:0fr}
 header .allbtn{background:linear-gradient(90deg,var(--martin),var(--grid));border:none}
 @media (max-width:600px){ nav{overflow-x:auto;flex-wrap:nowrap} nav .grp{flex:none} nav .grp .gl{display:none} fieldset > .row,fieldset > details{margin:0 12px} }
 @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) button.primary, :root:not([data-theme="light"]) nav .grp button.act{color:#0f1318} }
@@ -269,6 +277,11 @@ nav .grp.g .gl{padding-right:4px}
     </div>
     <div id="btErr" class="err"></div>
 
+<div id="btResult" class="slide hidden">
+      <div class="slidehead"><h2 id="btResTitle">Martin 백테스트 결과</h2><span class="spacer"></span>
+        <button type="button" class="small" data-slide-toggle>접기 ▲</button>
+        <button type="button" class="small" data-slide-close>닫기 ✕</button></div>
+      <div class="slidebody"><div>
     <div id="btSingle" class="hidden">
       <div class="grid" id="btStats" style="margin-top:14px"></div>
       <h2>가격과 매매 시점</h2>
@@ -291,6 +304,8 @@ nav .grp.g .gl{padding-right:4px}
       <div class="card tablewrap"><table id="swTable"><thead><tr>
         <th>하락폭</th><th>익절</th><th>단계</th><th>배수</th><th>추적</th><th>사이클</th><th>총 손익</th><th>최대 투입</th><th>수익률</th><th>최악 평가손실</th><th>최대단계 도달</th><th>기간 끝 보유</th>
       </tr></thead><tbody></tbody></table></div>
+    </div>
+      </div></div>
     </div>
   </section>
 
@@ -363,6 +378,11 @@ nav .grp.g .gl{padding-right:4px}
       <div class="row"><span></span><div><button class="primary" id="gBtRun">이 설정으로 백테스트</button> <button id="gBtSweep">후보 비교</button> <span id="gBtProg" class="hint"></span></div></div>
     </div>
     <div id="gBtErr" class="err"></div>
+<div id="gBtResult" class="slide hidden">
+      <div class="slidehead"><h2 id="gBtResTitle">Grid 백테스트 결과</h2><span class="spacer"></span>
+        <button type="button" class="small" data-slide-toggle>접기 ▲</button>
+        <button type="button" class="small" data-slide-close>닫기 ✕</button></div>
+      <div class="slidebody"><div>
     <div id="gBtSingle" class="hidden">
       <div class="grid" id="gBtStats" style="margin-top:12px"></div>
       <h2>가격·범위와 누적 손익</h2>
@@ -372,6 +392,8 @@ nav .grp.g .gl{padding-right:4px}
       <h2 id="gSwTitle"></h2>
       <p class="hint" id="gSwHint"></p>
       <div class="card tablewrap"><table id="gSwTable"><thead></thead><tbody></tbody></table></div>
+    </div>
+      </div></div>
     </div>
   </section>
 </main>
@@ -619,6 +641,22 @@ async function refresh() {
   $('#logs').textContent = s.logs.join('\n');
 }
 
+// ---------------- 결과 패널 (접기·펼치기·닫기) ----------------
+function slideOpen(id, title) {
+  const el = $('#' + id);
+  el.classList.remove('hidden', 'collapsed');
+  el.querySelector('[data-slide-toggle]').textContent = '접기 ▲';
+  if (title) el.querySelector('h2').textContent = title;
+  el.scrollIntoView({behavior: 'smooth', block: 'start'});
+}
+document.querySelectorAll('.slide').forEach(el => {
+  el.querySelector('[data-slide-toggle]').onclick = () => {
+    const c = el.classList.toggle('collapsed');
+    el.querySelector('[data-slide-toggle]').textContent = c ? '펼치기 ▼' : '접기 ▲';
+  };
+  el.querySelector('[data-slide-close]').onclick = () => el.classList.add('hidden');
+});
+
 // ---------------- 백테스트 ----------------
 let btMode = 'single', chart;
 $('#btMode').querySelectorAll('button').forEach(b => b.onclick = () => {
@@ -661,6 +699,7 @@ $('#btnBt').onclick = async () => {
     clearInterval(poll); $('#btnBt').disabled = false;
     if (b.error) return showErr($('#btErr'), [b.error]);
     if (!b.result) return;
+    slideOpen('btResult', `Martin 백테스트 결과 · ${b.result.kind === 'optimize' ? '추천 설정' : b.result.kind === 'sweep' ? '여러 설정 비교' : '현재 설정'}`);
     $('#btSingle').classList.toggle('hidden', b.result.kind !== 'single');
     $('#btSweep').classList.toggle('hidden', b.result.kind !== 'sweep');
     $('#btOpt').classList.toggle('hidden', b.result.kind !== 'optimize');
@@ -1077,6 +1116,7 @@ async function gBacktest(sweep) {
     clearInterval(poll); $('#gBtRun').disabled = $('#gBtSweep').disabled = false;
     if (b.error) return showErr($('#gBtErr'), [b.error]);
     if (!b.result) return;
+    slideOpen('gBtResult', `Grid 백테스트 결과 · ${b.result.coin} · ${b.result.kind === 'sweep' ? '후보 비교' : '현재 설정'}`);
     $('#gBtSingle').classList.toggle('hidden', b.result.kind !== 'single');
     $('#gBtSweepBox').classList.toggle('hidden', b.result.kind !== 'sweep');
     b.result.kind === 'sweep' ? gRenderSweep(b.result) : gRenderSingle(b.result);
