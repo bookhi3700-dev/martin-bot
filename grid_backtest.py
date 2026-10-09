@@ -5,7 +5,7 @@
  - 캔들 안에서 새로 건 주문(매수 체결 후 건 매도, 매도 체결 후 다시 건 매수)은 다음 캔들부터 체결될 수 있습니다
  - 지정가는 주문 가격 그대로 체결, 매수·매도 모두 수수료를 뺍니다
 """
-from grid_strategy import build_levels, new_cells, can_place_buy, cell_profit_pct
+from grid_strategy import build_levels, new_cells, can_place_buy, cell_profit_pct, apply_range_mode
 
 
 def run_grid_backtest(candles, cfg, tick=0.0, detail=True):
@@ -137,6 +137,22 @@ def run_grid_sweep(candles, cfg, counts, tick=0.0, min_krw=5000):
         r = run_grid_backtest(candles, c, tick, detail=False)
         r["note"] = note
         r["current"] = n == int(cfg["grids"])
+        rows.append(r)
+    rows.sort(key=lambda r: (r["note"] != "", -r["total_pnl"]))
+    return rows
+
+
+def run_gap_sweep(candles, cfg, gaps, tick=0.0, min_krw=5000):
+    """간격 % 방식: 하단·칸당 금액·칸 수는 그대로 두고 칸 간격(%)만 바꿔 비교 (간격이 넓을수록 범위도 넓어짐)"""
+    rows = []
+    for g in sorted({round(float(x), 3) for x in gaps if 0.2 <= float(x) <= 50} | {round(cfg["gap_pct"], 3)}):
+        c = apply_range_mode({**cfg, "gap_pct": g}, tick)
+        lv = build_levels(c, tick)
+        if len(set(lv)) != len(lv):
+            continue
+        note = "간격이 수수료보다 좁음" if min(cell_profit_pct(a, b, c["fee_pct"]) for a, b in zip(lv, lv[1:])) < 0.1 else ""
+        r = run_grid_backtest(candles, c, tick, detail=False)
+        r.update(note=note, gap_pct=g, current=abs(g - cfg["gap_pct"]) < 1e-9)
         rows.append(r)
     rows.sort(key=lambda r: (r["note"] != "", -r["total_pnl"]))
     return rows

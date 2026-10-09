@@ -18,8 +18,8 @@ from bot import Bot
 from backtest import fetch_candles, run_backtest, run_sweep, run_optimize
 from exchanges import exchange_class, ExchangeError, my_public_ip
 from grid_bot import GridBot
-from grid_backtest import run_grid_backtest, run_grid_sweep, suggest_range
-from grid_strategy import validate as grid_validate
+from grid_backtest import run_grid_backtest, run_grid_sweep, run_gap_sweep, suggest_range
+from grid_strategy import validate as grid_validate, apply_range_mode
 
 VERSION = "1.9"
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -331,7 +331,7 @@ def grid_backtest():
     body = request.get_json(force=True) or {}
     days = int(body.get("days", 180))
     cfg = dict(grid.cfg)
-    for k in ("lower", "upper", "fee_pct"):
+    for k in ("lower", "upper", "fee_pct", "gap_pct"):
         if body.get(k) not in (None, ""):
             cfg[k] = float(body[k])
     for k in ("grids", "krw_per_grid"):
@@ -339,6 +339,9 @@ def grid_backtest():
             cfg[k] = int(float(body[k]))
     if body.get("spacing") in ("geom", "arith"):
         cfg["spacing"] = body["spacing"]
+    if body.get("range_mode") in ("gap", "range"):
+        cfg["range_mode"] = body["range_mode"]
+    apply_range_mode(cfg)
     if body.get("coin"):
         cfg["coin"] = str(body["coin"]).upper()
     if body.get("exchange"):
@@ -363,8 +366,10 @@ def grid_backtest():
             if not cs:
                 raise ExchangeError("시세 데이터를 받지 못했습니다.")
             gbt_state["progress"] = "계산 중…"
-            if counts:
-                r = {"kind": "sweep", "rows": run_grid_sweep(cs, cfg, counts, tick, min_krw)}
+            if counts and cfg.get("range_mode") == "gap":
+                r = {"kind": "sweep", "by": "gap", "rows": run_gap_sweep(cs, cfg, counts, tick, min_krw)}
+            elif counts:
+                r = {"kind": "sweep", "by": "count", "rows": run_grid_sweep(cs, cfg, counts, tick, min_krw)}
             else:
                 r = {"kind": "single", **run_grid_backtest(cs, cfg, tick)}
             r.update(coin=cfg["coin"], days=days)

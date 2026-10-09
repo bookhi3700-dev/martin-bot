@@ -16,6 +16,8 @@ GRID_DEFAULTS = {
     "access_key": "",             # 비우면 마틴봇 설정의 키를 사용 (같은 거래소일 때)
     "secret_key": "",
     "coin": "BTC",
+    "range_mode": "gap",          # gap(하단 + 칸 간격% + 칸 수 → 상단 자동) | range(하단·상단 직접 입력)
+    "gap_pct": 1.0,               # 칸 간격(%) — 이만큼 오르면 판다
     "lower": 0.0,                 # 하단 가격
     "upper": 0.0,                 # 상단 가격
     "grids": 20,                  # 칸 수
@@ -28,6 +30,14 @@ GRID_DEFAULTS = {
 }
 
 MAX_GRIDS = 100
+
+
+def apply_range_mode(cfg, tick=0.0):
+    """간격 % 방식이면 상단 가격을 계산해서 채움 (등비 고정). cfg 를 직접 바꾸고 돌려줌"""
+    if cfg.get("range_mode") == "gap" and cfg.get("lower", 0) > 0 and cfg.get("gap_pct", 0) > 0 and int(cfg.get("grids", 0)) >= 1:
+        cfg["spacing"] = "geom"
+        cfg["upper"] = round_tick(cfg["lower"] * (1 + cfg["gap_pct"] / 100) ** int(cfg["grids"]), tick)
+    return cfg
 
 
 def round_tick(p, tick):
@@ -71,6 +81,10 @@ def validate(cfg, tick=0.0, min_krw=5000):
     lo, hi, n = float(cfg["lower"]), float(cfg["upper"]), int(cfg["grids"])
     if cfg["mode"] not in ("paper", "live"):
         errs.append("실행 모드 값이 올바르지 않습니다.")
+    if cfg.get("range_mode") not in ("gap", "range"):
+        errs.append("범위 정하는 방식 값이 올바르지 않습니다.")
+    if cfg.get("range_mode") == "gap" and not (0.2 <= cfg.get("gap_pct", 0) <= 50):
+        errs.append("칸 간격은 0.2% ~ 50% 사이로 입력하세요.")
     if not cfg["coin"] or not cfg["coin"].isalnum():
         errs.append("코인 심볼을 영문으로 입력하세요. 예: BTC")
     if lo <= 0 or hi <= 0:

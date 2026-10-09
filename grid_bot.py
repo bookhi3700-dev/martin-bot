@@ -20,7 +20,7 @@ import requests
 
 from exchanges import (exchange_class, ExchangeError, OrderUnconfirmed, OrderNotFound, Paper, floor_step)
 from grid_strategy import (GRID_DEFAULTS, build_levels, new_cells, can_place_buy, validate, summary,
-                           conflict_with_martin)
+                           conflict_with_martin, apply_range_mode)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
@@ -28,7 +28,7 @@ CONFIG_PATH = os.path.join(BASE_DIR, "grid_config.json")
 RUN_FLAG = os.path.join(DATA_DIR, "grid_running.flag")
 os.makedirs(DATA_DIR, exist_ok=True)
 SECRET_KEYS = ("access_key", "secret_key")
-LEVEL_KEYS = ("exchange", "mode", "coin", "lower", "upper", "grids", "spacing", "krw_per_grid")
+LEVEL_KEYS = ("exchange", "mode", "coin", "lower", "upper", "grids", "spacing", "krw_per_grid", "range_mode", "gap_pct")
 LIVE_EDITABLE = ("check_interval_sec", "fee_pct", "stop_loss_enabled", "stop_loss_price")
 MAX_PLACE_PER_TICK = 8
 
@@ -262,6 +262,13 @@ class GridBot:
                 except (TypeError, ValueError):
                     return [f"'{k}' 값이 올바르지 않습니다."]
             merged["coin"] = merged["coin"].upper()
+            tick, min_krw = 0.0, 5000.0
+            try:
+                mi = exchange_class(merged["exchange"])().market_info(f"KRW-{merged['coin']}")
+                tick, min_krw = mi["tick"], mi["min_krw"]
+            except Exception:
+                pass
+            apply_range_mode(merged, tick)
             changed = [k for k in GRID_DEFAULTS if merged[k] != self.cfg[k]]
             if self.running and any(k not in LIVE_EDITABLE for k in changed):
                 return ["실행 중에는 수수료·확인 주기·손절만 바꿀 수 있습니다. 범위·칸 수·금액을 바꾸려면 먼저 중지하세요."]
@@ -271,12 +278,6 @@ class GridBot:
             if merged["mode"] == "live" and not (merged["access_key"] or
                                                  (self.mb.cfg.get("exchange") == merged["exchange"] and self.mb.cfg.get("access_key"))):
                 return ["실전 모드는 API 키가 필요합니다. 그리드용 키를 넣거나, 마틴봇과 같은 거래소라면 마틴봇 설정의 키를 사용합니다."]
-            tick, min_krw = 0.0, 5000.0
-            try:
-                mi = exchange_class(merged["exchange"])().market_info(f"KRW-{merged['coin']}")
-                tick, min_krw = mi["tick"], mi["min_krw"]
-            except Exception:
-                pass
             errs = validate(merged, tick, min_krw) + self.check_conflict(merged)
             if errs:
                 return errs
