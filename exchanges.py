@@ -498,9 +498,9 @@ class Coinone(_JwtExchange):
 
     def _settle(self, oid, market, side, before_krw, before_coin):
         """코인원 체결 확인.
-        수량은 이 코인 잔고 변화로(가장 정확), 원화는 잔고 변화와 주문 내역을 비교해서 정합니다.
-        같은 계좌에서 그리드 봇의 지정가 주문이 그 사이 체결되면 원화 잔고 변화에 섞이므로,
-        둘이 1% 넘게 다르면 주문 내역 금액을 씁니다."""
+        수량·원화 모두 잔고 변화(가장 정확)를 쓰되, 주문 내역과 1% 넘게 다르면 주문 내역 값을 씁니다.
+        같은 계좌에서 Grid의 지정가 주문(다른 코인이든 같은 코인이든)이 그 사이 체결되면
+        잔고 변화에 섞이기 때문입니다."""
         coin = market.split("-")[1]
         o = None
         for _ in range(20):
@@ -522,6 +522,9 @@ class Coinone(_JwtExchange):
             dk, dc = b.get("KRW", 0) - before_krw, b.get(coin, 0) - before_coin
             if (side == "bid" and dc > 0) or (side == "ask" and dc < 0):
                 vol = abs(dc)
+                # 같은 코인을 쓰는 다른 봇(Grid)의 체결이 섞이면 잔고 차이가 주문 수량과 달라짐 → 주문 내역 수량 사용
+                if by_order and abs(vol - by_order["volume"]) > by_order["volume"] * 0.01:
+                    vol = by_order["volume"]
                 krw = -dk if side == "bid" else dk
                 if by_order and (krw <= 0 or abs(krw - by_order["krw"]) > max(by_order["krw"] * 0.01, 50)):
                     krw = by_order["krw"]

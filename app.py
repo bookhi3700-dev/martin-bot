@@ -26,7 +26,6 @@ BASE = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, static_folder=os.path.join(BASE, "static"))
 bot = Bot()
 grid = GridBot(bot)
-bot.extra_validate = lambda martin_cfg: grid.check_conflict(martin_cfg=martin_cfg)
 bt_state = {"running": False, "progress": "", "result": None, "error": ""}
 gbt_state = {"running": False, "progress": "", "result": None, "error": ""}
 

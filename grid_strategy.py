@@ -129,18 +129,15 @@ def validate(cfg, tick=0.0, min_krw=5000):
 
 
 def conflict_with_martin(grid_cfg, martin_cfg, from_martin=False):
-    """같은 거래소 같은 계좌에서 Martin Bot과 그리드가 같은 코인을 실전 매매하지 못하게 막음"""
+    """같은 거래소에서 Martin Bot과 Grid가 같은 코인을 실전 매매할 때 보여줄 경고 (막지는 않음)"""
     if grid_cfg.get("mode") != "live" or martin_cfg.get("mode") != "live":
         return None
     if grid_cfg.get("exchange") != martin_cfg.get("exchange"):
         return None
     coin = (grid_cfg.get("coin") or "").upper()
     if coin in {c["coin"] for c in martin_cfg.get("coins", [])}:
-        if from_martin:
-            return (f"{coin} 은(는) Grid가 같은 거래소에서 실전 매매하는 코인이라 Martin Bot에 넣을 수 없습니다. "
-                    f"두 봇이 같은 코인을 쓰면 서로의 체결이 섞입니다.")
-        return (f"{coin} 은(는) Martin Bot이 같은 거래소에서 실전 매매하는 코인입니다. 두 봇이 같은 코인을 쓰면 서로의 체결이 섞입니다. "
-                f"Martin Bot 설정에서 {coin} 을(를) 먼저 정리·삭제한 뒤 Grid를 실전으로 시작하세요.")
+        return (f"{coin}: Martin과 Grid가 같은 거래소에서 함께 실전 매매합니다. 각자 자기가 산 수량만 기록하고 팔지만, "
+                f"거래소 앱의 {coin} 보유 수량은 두 봇 합계입니다. 거래소 앱에서 직접 사고팔지 마세요.")
     return None
 
 

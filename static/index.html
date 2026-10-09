@@ -877,18 +877,18 @@ const gEds = () => [...document.querySelectorAll('#gEditors .coinedit')];
 function martinOverlap(coin, gexch, gmode) {
   const mc = (cfg.coins || []).map(c => c.coin);
   if (!coin || cfg.exchange !== gexch || !mc.includes(coin)) return null;
-  const block = cfg.mode === 'live' && gmode === 'live';
-  return {block, text: block
-    ? `Martin이 같은 거래소(${EXN[gexch]})에서 ${coin}을(를) 실전으로 쓰고 있어 Grid 실전으로는 저장할 수 없습니다. 두 봇이 같은 코인을 쓰면 서로의 체결이 섞입니다. Martin에서 ${coin}을(를) 먼저 정리·삭제하세요.`
-    : `Martin도 같은 거래소(${EXN[gexch]})에서 ${coin}을(를) 쓰고 있습니다. 모의투자는 괜찮지만, 둘 다 실전이면 같은 코인을 함께 쓸 수 없습니다.`};
+  const both = cfg.mode === 'live' && gmode === 'live';
+  return {block: false, text: both
+    ? `Martin도 같은 거래소(${EXN[gexch]})에서 ${coin}을(를) 실전으로 쓰고 있습니다. 각자 자기가 산 수량만 기록하고 팔지만, 거래소 앱의 ${coin} 보유 수량은 두 봇 합계입니다. 거래소 앱에서 직접 사고팔지 마세요.`
+    : `Martin도 같은 거래소(${EXN[gexch]})에서 ${coin}을(를) 쓰고 있습니다. 같이 써도 되지만, 거래소 앱의 ${coin} 보유 수량은 두 봇 합계로 보입니다.`};
 }
 function gridOverlap(coin, mexch, mmode) {
   const gc = (gcfg.coins || []).map(c => c.coin);
   if (!coin || gcfg.exchange !== mexch || !gc.includes(coin)) return null;
-  const block = gcfg.mode === 'live' && mmode === 'live';
-  return {block, text: block
-    ? `Grid가 같은 거래소(${EXN[mexch]})에서 ${coin}을(를) 실전으로 쓰고 있어 Martin 실전으로는 저장할 수 없습니다. Grid 설정에서 ${coin}을(를) 먼저 정리·삭제하세요.`
-    : `Grid도 같은 거래소(${EXN[mexch]})에서 ${coin}을(를) 쓰고 있습니다. 모의투자는 괜찮지만, 둘 다 실전이면 같은 코인을 함께 쓸 수 없습니다.`};
+  const both = gcfg.mode === 'live' && mmode === 'live';
+  return {block: false, text: both
+    ? `Grid도 같은 거래소(${EXN[mexch]})에서 ${coin}을(를) 실전으로 쓰고 있습니다. 각자 자기가 산 수량만 기록하고 팔지만, 거래소 앱의 ${coin} 보유 수량은 두 봇 합계입니다. 거래소 앱에서 직접 사고팔지 마세요.`
+    : `Grid도 같은 거래소(${EXN[mexch]})에서 ${coin}을(를) 쓰고 있습니다. 같이 써도 되지만, 거래소 앱의 ${coin} 보유 수량은 두 봇 합계로 보입니다.`};
 }
 function mWarn(d) {
   if (!d) return;

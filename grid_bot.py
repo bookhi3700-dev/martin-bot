@@ -619,7 +619,7 @@ class GridBot:
         return c
 
     def check_conflict(self, grid_cfg=None, martin_cfg=None):
-        """실전 + 같은 거래소에서 Martin과 같은 코인이면 막음 (grid_cfg 는 coins 목록이 있는 전체 설정)"""
+        """실전 + 같은 거래소에서 Martin과 같은 코인이면 경고 문구 (막지는 않음). grid_cfg 는 coins 목록이 있는 전체 설정"""
         g = grid_cfg or self.cfg
         errs = []
         for c in g["coins"]:
@@ -688,7 +688,6 @@ class GridBot:
                 errs += [f"{c['coin']}: {e}" for e in validate({**{k: merged[k] for k in GRID_GLOBAL_DEFAULTS}, **c}, tick, min_krw)]
             if merged["mode"] == "live" and not self._keys(merged)[0]:
                 errs.append("실전 모드는 API 키가 필요합니다. Grid용 키를 넣거나, Martin Bot과 같은 거래소라면 Martin Bot 설정의 키를 사용합니다.")
-            errs += self.check_conflict(merged)
             if errs:
                 return errs
             self.cfg = merged
@@ -727,7 +726,6 @@ class GridBot:
                     errs += [f"{s.coin}: {e}" for e in validate(s.cfg, (s.state.get("minfo") or {}).get("tick", 0.0))]
             if all(s.state.get("paused") for s in slots):
                 errs.append("켜진 코인이 모두 일시정지 상태입니다. Grid 탭에서 [기록 비우기]로 정리한 뒤 시작하세요.")
-            errs += self.check_conflict()
             if self.cfg["mode"] == "live" and not self._keys()[0]:
                 errs.append("실전 모드는 API 키가 필요합니다.")
             if errs:
@@ -741,6 +739,8 @@ class GridBot:
             desc = ", ".join(f"{s.coin} {s.cfg['lower']:,.0f}~{s.cfg['upper']:,.0f}·{s.cfg['grids']}칸" for s in slots
                              if not s.state.get("paused"))
             self.log(f"▶ Grid 시작 — {mode} / {self.cfg['exchange']} / {desc}", notify=True)
+            for w in self.check_conflict():
+                self.log(f"⚠ {w}")
         return []
 
     def stop(self):
