@@ -221,7 +221,8 @@ class Bot:
             for gone in old_names - new_names:
                 s = self.slots.get(gone)
                 if s and s.pos.step and not identity:
-                    return [f"{gone} 은(는) 보유 중인 포지션이 있어 삭제할 수 없습니다. 끄기만 하거나, 정리 후 삭제하세요."]
+                    return [f"{gone} 은(는) 아직 {s.pos.step}단계 포지션(투입 {s.pos.cost:,.0f}원)을 들고 있어 삭제할 수 없습니다. "
+                            f"'이 코인 매매'는 켜둔 채 '자동 재시작'만 끄고 저장하면 익절 후 멈춥니다. 그때 삭제하세요."]
             self.cfg = merged
             save_config(self.cfg)
             self._sync_slots(reload_all=identity)

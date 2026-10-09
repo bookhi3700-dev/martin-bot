@@ -471,7 +471,7 @@ document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
 // ---------------- 설정 ----------------
 let cfg = {coins: []};
 const COIN_FIELDS = [
-  ['enabled', '이 코인 매매', 'check', '끄면 매매를 멈춥니다 (보유분은 유지)'],
+  ['enabled', '이 코인 매매', 'check', '끄면 추가 매수와 <b>익절 매도까지 모두</b> 멈춥니다 (보유분은 그대로 둠). 정리하려면 이건 켜두고 \'자동 재시작\'만 끄세요'],
   ['base_amount', '1단계 매수금액 (원)', 'number', '', 1000],
   ['martin_multiplier', 'Martin 배수', 'number', '2 = 1만→2만→4만…  1.5 = 1만→1.5만→2.25만…', 0.1],
   ['drop_steps', '단계별 하락폭 (%)', 'text', '쉼표로 구분. <code>5</code> = 모든 단계 5% · <code>5,5,7,10,15</code> = 2단계 5%, 3단계 5%, 4단계 7%… (모자라면 마지막 값 반복)'],
@@ -511,7 +511,16 @@ function coinEditor(c, open) {
       <p style="margin:10px 0 0"><button type="button" class="danger small" data-del>이 코인 삭제</button></p>
     </div>`;
   d.querySelectorAll('[data-k]').forEach(el => el.addEventListener('input', () => updateLadder(d)));
-  d.querySelector('[data-del]').onclick = () => { if (confirm(`${c.coin} 을(를) 목록에서 삭제할까요? (저장해야 반영)`)) { d.remove(); updateBudgetHint(); } };
+  d.querySelector('[data-del]').onclick = () => {
+    const live = typeof mstat !== 'undefined' && mstat ? mstat.coins.find(x => x.coin === c.coin) : null;
+    if (live && live.position.step > 0) {
+      alert(`${c.coin} 은(는) 아직 ${live.position.step}단계 포지션(투입 ${won(live.position.cost)})을 들고 있어 삭제할 수 없습니다.\n\n` +
+        `정리하는 방법:\n① '이 코인 매매'는 켜둔 채 '자동 재시작'만 끄고 [설정 저장]\n② 익절되면 이 코인은 자동으로 멈춥니다\n③ 그다음 삭제하세요\n\n` +
+        `※ 거래소 앱에서 직접 팔았다면, Martin 현황의 이 코인 카드에서 [기록 초기화] 후 삭제할 수 있습니다.`);
+      return;
+    }
+    if (confirm(`${c.coin} 을(를) 목록에서 삭제할까요? (저장해야 반영)`)) { d.remove(); updateBudgetHint(); }
+  };
   updateLadder(d);
   return d;
 }
@@ -541,7 +550,7 @@ function updateLadder(d) {
 }
 function updateBudgetHint() {
   let need = 0;
-  document.querySelectorAll('.coinedit').forEach(d => { const o = readCoin(d); if (o.enabled) { const r = coinLadder(o); need += r.length ? r[r.length - 1].cum : 0; } });
+  document.querySelectorAll('#coinEditors .coinedit').forEach(d => { const o = readCoin(d); if (o.enabled) { const r = coinLadder(o); need += r.length ? r[r.length - 1].cum : 0; } });
   const b = +$('#g_total_budget').value;
   $('#budgetHint').innerHTML = `0 = 제한 없음. 켜진 코인이 모두 최대 단계까지 가면 <b>${won(need)}</b> 필요` +
     (b > 0 && b < need ? ` → 한도 ${won(b)}를 넘는 추가 매수는 보류되고 알림이 옵니다.` : '');
@@ -563,7 +572,7 @@ $('#addCoinSel').onchange = () => $('#addCoinTxt').classList.toggle('hidden', $(
 $('#btnAddCoin').onclick = () => {
   const name = ($('#addCoinSel').value === '_' ? $('#addCoinTxt').value : $('#addCoinSel').value).trim().toUpperCase();
   if (!/^[A-Z0-9]{2,10}$/.test(name)) return alert('코인 심볼을 영문으로 입력하세요. 예: DOGE');
-  if (document.querySelector(`.coinedit[data-coin="${name}"]`)) return alert('이미 있는 코인입니다.');
+  if (document.querySelector(`#coinEditors .coinedit[data-coin="${name}"]`)) return alert('이미 있는 코인입니다.');
   const base = cfg.coins[0] || {};
   $('#coinEditors').appendChild(coinEditor({...base, coin: name, enabled: true}, true));
 };
@@ -571,7 +580,7 @@ $('#btnSave').onclick = async () => {
   const body = {};
   for (const k of ['mode', 'exchange', 'access_key', 'secret_key', 'total_budget', 'total_limit_action', 'check_interval_sec', 'fee_pct', 'slippage_pct', 'telegram_token', 'telegram_chat_id'])
     body[k] = $('#g_' + k).value;
-  body.coins = [...document.querySelectorAll('.coinedit')].map(readCoin);
+  body.coins = [...document.querySelectorAll('#coinEditors .coinedit')].map(readCoin);
   if (body.mode === 'live' && cfg.mode !== 'live' && !confirm('실전 모드는 실제 돈으로 주문합니다. 계속할까요?')) return;
   const r = await api('/api/config', body);
   showErr($('#cfgErr'), r.errors);
@@ -631,6 +640,7 @@ function coinCard(c, running) {
     <div class="coinhead"><h3>${esc(c.coin)}</h3>${chip}<span class="spacer"></span><span class="hint">현재가</span><b>${num(price)}</b></div>
     ${c.paused ? `<div class="alert bad">⛔ ${esc(c.paused)}<br>거래소 앱에서 체결 여부를 확인하고, 봇 기록과 다르면 '기록 초기화' 후 재개하세요. <button class="small" data-resume="${c.coin}">재개</button></div>` : ''}
     ${c.budget_blocked ? `<div class="alert warn">투입 한도에 걸려 추가 매수를 멈춘 상태입니다. 익절가에 오면 매도합니다.</div>` : ''}
+    ${!c.enabled && p.step ? `<div class="alert warn">이 코인은 꺼져 있어 <b>익절가에 와도 팔지 않습니다</b>. 정리하려면 설정에서 '이 코인 매매'를 켜고 '자동 재시작'만 끄세요.</div>` : ''}
     ${(() => { const w = typeof gridOverlap === 'function' ? gridOverlap(c.coin, cfg.exchange, cfg.mode) : null; return w ? `<div class="alert ${w.block ? 'bad' : 'warn'}">⚠ ${w.text}</div>` : ''; })()}
     <div class="hint">진행 ${p.step} / ${c.max_steps}단계${p.step ? ` · ${esc(p.cycle_started_at)} 시작` : ''}</div>
     <div class="dots">${dots}</div>
@@ -780,7 +790,7 @@ function applyOpt(picks, all) {
   const msg = picks.map(p => `${p.coin}: ${optDesc(p)}`).join('\n');
   if (!confirm(`설정 탭에 입력할까요?\n\n${msg}\n\n코인별 투입 한도 ${won(r.budget)}${all ? `, 전체 투입 한도 ${won(r.capital)}` : ''}\n입력 후 [설정 저장]을 눌러야 반영됩니다.`)) return;
   for (const p of picks) {
-    let d = document.querySelector(`.coinedit[data-coin="${p.coin}"]`);
+    let d = document.querySelector(`#coinEditors .coinedit[data-coin="${p.coin}"]`);
     if (!d) { d = coinEditor({...(cfg.coins[0] || {}), coin: p.coin, enabled: true}, false); $('#coinEditors').appendChild(d); }
     const set = (k, v) => { const el = d.querySelector(`[data-k="${k}"]`); if (!el) return; if (el.type === 'checkbox') el.checked = v; else el.value = v; };
     set('enabled', true); set('base_amount', p.base_amount); set('martin_multiplier', p.martin_multiplier); set('max_steps', p.max_steps);
@@ -791,7 +801,7 @@ function applyOpt(picks, all) {
   }
   if (all) {
     const keep = new Set(picks.map(p => p.coin));
-    document.querySelectorAll('.coinedit').forEach(d => { if (!keep.has(d.dataset.coin)) { const el = d.querySelector('[data-k="enabled"]'); el.checked = false; updateLadder(d); } });
+    document.querySelectorAll('#coinEditors .coinedit').forEach(d => { if (!keep.has(d.dataset.coin)) { const el = d.querySelector('[data-k="enabled"]'); el.checked = false; updateLadder(d); } });
     $('#g_total_budget').value = r.capital; updateBudgetHint();
   }
   document.querySelector('nav button[data-tab="settings"]').click();
@@ -852,7 +862,7 @@ function renderSweep(r) {
   document.querySelectorAll('#swTable tr.pick').forEach(tr => tr.onclick = () => {
     const x = r.rows[+tr.dataset.i];
     if (!confirm(`${r.coin} 규칙에 적용할까요?\n하락폭 ${x.drop_steps} · 익절 ${x.take_profit_pct}% · 최대 ${x.max_steps}단계 · 배수 ${x.martin_multiplier} · 추적 ${x.trailing ? x.trailing + '%' : '끔'}\n\n설정 탭에서 '설정 저장'을 눌러야 반영됩니다.`)) return;
-    const d = document.querySelector(`.coinedit[data-coin="${r.coin}"]`); if (!d) return;
+    const d = document.querySelector(`#coinEditors .coinedit[data-coin="${r.coin}"]`); if (!d) return;
     const set = (k, v) => { const el = d.querySelector(`[data-k="${k}"]`); if (el.type === 'checkbox') el.checked = v; else el.value = v; };
     set('drop_steps', x.drop_steps); set('take_profit_pct', x.take_profit_pct); set('max_steps', x.max_steps); set('martin_multiplier', x.martin_multiplier);
     set('trailing_enabled', !!x.trailing); if (x.trailing) set('trailing_pct', x.trailing);
