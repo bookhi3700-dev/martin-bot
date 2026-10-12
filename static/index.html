@@ -1089,14 +1089,16 @@ function gCoinCard(c, s) {
   if (w) alerts += `<div class="alert ${w.block ? 'bad' : 'warn'}">⚠ ${w.text}</div>`;
   if (cells.length && c.price && !t.in_range && c.enabled) alerts += `<div class="alert warn">현재가가 격자 범위(${num(cells[0].buy)} ~ ${num(cells[cells.length - 1].sell)}) 밖입니다. ${c.price < cells[0].buy ? '아래로 벗어나 모든 칸이 코인을 들고 반등을 기다립니다.' : '위로 벗어나 모든 칸이 팔린 상태로 매수 대기 중입니다.'}</div>`;
   const rows = [];
+  // 현재가 구분선: 매수가 열에 표시 (매도가와 헷갈리지 않게)
+  const curRow = `<tr class="cur"><td></td><td style="color:var(--grid);white-space:nowrap">현재가 ${num(c.price)}</td><td colspan="4"></td></tr>`;
   let marked = false;
   for (let i = cells.length - 1; i >= 0; i--) {
     const x = cells[i];
-    if (!marked && c.price && c.price >= x.sell) { rows.push(`<tr class="cur"><td colspan="6" style="text-align:center;color:var(--grid)">── 현재가 ${num(c.price)} ──</td></tr>`); marked = true; }
+    if (!marked && c.price && c.price >= x.sell) { rows.push(curRow); marked = true; }
     const [label, pc] = G_ST[x.st] || [x.st, ''];
     rows.push(`<tr><td>${x.i + 1}</td><td>${num(x.buy)}</td><td>${num(x.sell)}</td><td><span class="pill ${pc}">${label}</span></td><td>${x.qty ? x.qty.toFixed(8) : ''}</td><td>${x.cost ? won(x.cost) : ''}</td></tr>`);
   }
-  if (!marked && c.price && cells.length) rows.push(`<tr class="cur"><td colspan="6" style="text-align:center;color:var(--grid)">── 현재가 ${num(c.price)} ──</td></tr>`);
+  if (!marked && c.price && cells.length) rows.push(curRow);
   const sm = c.summary;
   const range = cells.length ? `${num(cells[0].buy)} ~ ${num(cells[cells.length - 1].sell)} · ${cells.length}칸` : sm ? `${num(sm.levels[0])} ~ ${num(sm.levels[sm.levels.length - 1])} · ${sm.cells}칸 (시작하면 생성)` : '범위 미설정';
   const canClear = !s.running && !s.stopping && (cells.length || c.paused);
