@@ -43,6 +43,7 @@ COIN_DEFAULTS = {
     "stop_loss_enabled": False,
     "stop_loss_pct": 15.0,
     "auto_restart": True,
+    "start_price": 0.0,           # 시작 가격 — 0 이면 바로 시작, 넣으면 현재가가 이 가격 이하일 때만 1단계 매수 (매 사이클)
     "coin_budget": 0,             # 이 코인 투입 한도(원) — 0 이면 제한 없음
     "limit_action": "hold",       # hold(추가 매수만 중지, 익절 대기) | pause(코인 매매 중지) | sell(전량 매도 후 중지)
 }
@@ -161,8 +162,16 @@ def update_trailing(pos, price, cfg):
     return False
 
 
+def waiting_start(pos, price, cfg):
+    """1단계 매수 전, 현재가가 시작 가격보다 높아서 기다리는 중인지"""
+    sp = cfg.get("start_price", 0) or 0
+    return pos.step == 0 and sp > 0 and price is not None and price > sp
+
+
 def decide(pos, price, cfg):
     if pos.step == 0:
+        if waiting_start(pos, price, cfg):
+            return Action("hold", "시작 가격 대기")
         return Action("buy", "사이클 시작 (1단계)", amount_krw=step_amount(cfg, 0), trigger_price=price)
 
     tp = take_profit_price(pos, cfg)
@@ -228,6 +237,8 @@ def validate_coin(c):
         errs.append(f"[{name}] 익절 수익률이 올바르지 않습니다.")
     if not (1 <= int(c["max_steps"]) <= 15):
         errs.append(f"[{name}] 최대 단계는 1~15 사이여야 합니다.")
+    if c.get("start_price", 0) < 0:
+        errs.append(f"[{name}] 시작 가격은 0 이상이어야 합니다 (0 = 바로 시작).")
     if c["coin_budget"] < 0:
         errs.append(f"[{name}] 코인 투입 한도는 0 이상이어야 합니다 (0 = 제한 없음).")
     elif 0 < c["coin_budget"] < c["base_amount"]:

@@ -13,7 +13,8 @@ import requests
 from exchanges import make_exchange, ExchangeError, OrderUnconfirmed
 from strategy import (GLOBAL_DEFAULTS, COIN_DEFAULTS, Position, Action, decide, apply_buy, close_position,
                       update_trailing, next_buy_trigger, take_profit_price, trailing_stop_price,
-                      stop_loss_price, ladder, max_budget, step_amount, validate_coin, drop_for_step)
+                      stop_loss_price, ladder, max_budget, step_amount, validate_coin, drop_for_step,
+                      waiting_start)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
@@ -101,6 +102,7 @@ class Slot:
         self.paused = ""          # 사유가 있으면 일시정지 (미확인 주문 등)
         self.last_price = None
         self.budget_blocked = False
+        self.start_wait_logged = False
         self.load()
 
     @property
@@ -330,10 +332,16 @@ class Bot:
                          f"{cfg['trailing_pct']}% 빠지면 매도)", notify=True)
             elif slot.pos.trail_armed:
                 slot.save()
-            act = decide(slot.pos, price, cfg)
-            if act.kind == "hold":
+            if slot.pos.step == 0 and not cfg["auto_restart"] and slot.stats["cycles"] > 0:
                 return
-            if act.kind == "buy" and slot.pos.step == 0 and not cfg["auto_restart"] and slot.stats["cycles"] > 0:
+            act = decide(slot.pos, price, cfg)
+            if waiting_start(slot.pos, price, cfg):
+                if not slot.start_wait_logged:
+                    slot.start_wait_logged = True
+                    self.log(f"⏳ {slot.coin} 시작 가격 {cfg['start_price']:,.2f} 대기 중 (현재 {price:,.2f}) "
+                             f"— 이 가격 이하로 내려오면 1단계를 매수합니다.", notify=True)
+                return
+            if act.kind == "hold":
                 return
             stop_after = False
             # ① 코인별 투입 한도
@@ -373,6 +381,7 @@ class Bot:
         if act.kind == "buy":
             fill = ex.market_buy(slot.market, act.amount_krw)
             with self.lock:
+                slot.start_wait_logged = False
                 apply_buy(slot.pos, fill["krw"], fill["volume"], fill["price"], now())
                 slot.save()
                 slot.log_trade("매수", act.reason, fill)
@@ -435,6 +444,8 @@ class Bot:
                 coins.append({
                     "coin": c["coin"], "enabled": c["enabled"], "market": s.market, "price": price,
                     "paused": s.paused, "budget_blocked": s.budget_blocked,
+                    "start_price": c["start_price"],
+                    "waiting_start": waiting_start(p, price, cfg) and (c["auto_restart"] or not s.stats["cycles"]),
                     "max_steps": c["max_steps"], "trailing_enabled": c["trailing_enabled"],
                     "coin_budget": c["coin_budget"], "limit_action": c["limit_action"],
                     "position": {**p.to_dict(), "avg_price": p.avg_price, "value": value, "pnl": pnl,

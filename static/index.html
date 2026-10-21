@@ -481,6 +481,7 @@ const COIN_FIELDS = [
   ['trailing_enabled', '추적 익절', 'check', '목표 수익 도달 후 바로 팔지 않고, 고점을 따라가다 아래 폭만큼 빠지면 매도 (목표가 밑으로는 기다리지 않음)'],
   ['trailing_pct', '추적 익절 폭 (%)', 'number', '고점 대비 이만큼 빠지면 매도', 0.1],
   ['auto_restart', '자동 재시작', 'check', '익절 후 바로 1단계부터 새 사이클 시작'],
+  ['start_price', '시작 가격 (원)', 'number', '0 = 바로 시작. 넣으면 현재가가 이 가격 <b>이하</b>로 내려올 때 1단계를 삽니다. 익절 후 자동 재시작할 때도 매번 이 가격을 다시 기다립니다', 'any'],
   ['coin_budget', '코인 투입 한도 (원)', 'number', '0 = 제한 없음. 이 코인에 들어간 돈이 이 금액을 넘게 되는 추가 매수가 오면 아래 동작을 합니다', 10000],
   ['limit_action', '코인 한도 도달 시', 'limit', ''],
   ['stop_loss_enabled', '손절 사용', 'check', '최대 단계까지 산 뒤에만 작동'],
@@ -628,6 +629,7 @@ function coinCard(c, running) {
   else if (c.paused) chip = '<span class="pill live">일시정지</span>';
   else if (p.trail_armed) chip = '<span class="pill on">추적 익절 중</span>';
   else if (c.budget_blocked) chip = '<span class="pill warn">한도 보류</span>';
+  else if (c.waiting_start) chip = '<span class="pill warn">시작 가격 대기</span>';
   else if (running) chip = '<span class="pill martinp">매매 중</span>';
   const dots = Array.from({length: c.max_steps}, (_, i) => `<span class="${i < p.step ? (p.step >= c.max_steps ? 'full' : 'f') : ''}"></span>`).join('');
   const dist = x => price && x ? ` <small>(${pct((x / price - 1) * 100)})</small>` : '';
@@ -647,7 +649,8 @@ function coinCard(c, running) {
     <div class="kv">
       ${p.step ? `<div class="k">평단가</div><div class="v">${num(p.avg_price)}</div>
       <div class="k">투입 / 평가손익</div><div class="v">${won(p.cost)}<br><span class="${cls(p.pnl)}">${signed(p.pnl)} (${pct(p.pnl / p.cost * 100)})</span></div>
-      ${nextBuy}${exit}` : `<div class="k">포지션</div><div class="v">없음</div>`}
+      ${nextBuy}${exit}` : `<div class="k">포지션</div><div class="v">없음</div>
+      ${c.start_price > 0 ? `<div class="k">시작 가격</div><div class="v">${num(c.start_price)}${dist(c.start_price)}${c.waiting_start ? '<br><small>이 가격 이하로 오면 1단계 매수</small>' : ''}</div>` : ''}`}
       <div class="k">실현손익</div><div class="v"><span class="${cls(c.stats.realized)}">${signed(c.stats.realized)}</span> <small>${c.stats.cycles}회</small></div>
     </div>
     <details><summary>단계표 · 매수 내역</summary>
