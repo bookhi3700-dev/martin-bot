@@ -38,6 +38,13 @@ MAX_PLACE_PER_TICK = 8
 MAX_COINS = 10
 
 
+def extends_only(old, new, changed):
+    """간격 % 방식에서 하단·간격·칸당 금액은 그대로, 칸 수만 늘린 변경인지 (상단은 자동 계산이라 같이 바뀜).
+    이 경우 기존 칸 가격이 그대로라서 들고 있는 칸을 건드리지 않고 위쪽에 칸만 덧붙일 수 있습니다."""
+    return (old.get("range_mode") == new.get("range_mode") == "gap" and set(changed) <= {"grids", "upper"}
+            and int(new["grids"]) > int(old["grids"]))
+
+
 def now():
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -245,7 +252,26 @@ class GridCoin:
                 self.state["cells"] = new_cells(levels)
                 self.save()
                 self.log(f"격자 {len(levels) - 1}칸 생성: {levels[0]:,.0f} ~ {levels[-1]:,.0f} (호가 단위 {mi['tick']:g})")
+            elif self._extendable(levels):
+                cur = self.state["levels"]
+                n_old = len(cur) - 1
+                ext = cur + levels[len(cur):]
+                self.state["levels"] = ext
+                self.state["cells"] += new_cells(ext)[n_old:]
+                self.save()
+                self.log(f"격자 {n_old}칸 → {len(ext) - 1}칸으로 늘림: 위쪽 {cur[-1]:,.0f} ~ {ext[-1]:,.0f} 추가 "
+                         f"(기존 칸·보유분은 그대로)", notify=True)
         return mi
+
+    def _extendable(self, levels):
+        """새 격자가 지금 격자를 그대로 두고 위로 칸만 더한 모양인지 (간격 % 방식, 하단 같음, 칸 수 늘어남)"""
+        cur = self.state["levels"]
+        if self.cfg.get("range_mode") != "gap" or len(cur) < 2 or len(levels) <= len(cur):
+            return False
+        if levels[0] != cur[0] or levels[len(cur)] <= cur[-1]:
+            return False
+        # 호가 반올림 차이 정도만 허용 — 간격이 바뀌었으면 기존 칸 위치가 크게 달라짐
+        return abs(levels[len(cur) - 1] / cur[-1] - 1) < self.cfg["gap_pct"] / 100 / 10
 
     # ---------- 한 번의 확인 ----------
     def tick(self, ex, price, mi):
@@ -681,8 +707,10 @@ class GridBot:
                     if (self.running or self.stopping) and any(k not in LIVE_EDITABLE_COIN for k in ch):
                         errs.append(f"{c['coin']}: 실행 중에는 손절만 바꿀 수 있습니다. 범위·칸·금액·켜고 끄기는 Grid를 중지한 뒤 바꾸세요.")
                         continue
-                    if s and s.active_cells() and any(k in COIN_LEVEL_KEYS for k in ch):
+                    level_ch = [k for k in ch if k in COIN_LEVEL_KEYS]
+                    if s and s.active_cells() and level_ch and not extends_only(o, c, level_ch):
                         errs.append(f"{c['coin']}: 코인을 들고 있거나 주문이 걸린 칸이 있어 범위·칸·금액을 바꿀 수 없습니다. "
+                                    "(간격 % 방식에서 하단·간격·칸당 금액을 그대로 두고 칸 수만 늘리는 것은 됩니다.) "
                                     "중지 후 [정리]로 보유분을 매도하거나 기록을 비운 뒤 바꾸세요.")
                         continue
                 errs += [f"{c['coin']}: {e}" for e in validate({**{k: merged[k] for k in GRID_GLOBAL_DEFAULTS}, **c}, tick, min_krw)]
