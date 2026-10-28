@@ -102,7 +102,7 @@ tr.mine td{font-weight:650}
 
 /* ====== 두 봇, 두 색 ====== */
 section{--dom:var(--martin)}
-#tab-grid,#tab-gridset{--dom:var(--grid)}
+#tab-grid,#tab-gridset,#tab-gridbt{--dom:var(--grid)}
 section button.primary{background:var(--dom);border-color:var(--dom)}
 section .seg button.act{background:var(--dom)}
 header{background:var(--head);box-shadow:0 1px 0 var(--line);border-bottom:none;padding:10px 20px}
@@ -216,6 +216,7 @@ nav .grp.h{--c:var(--home)}
   <div class="grp g"><span class="gl">Grid</span>
     <button data-tab="grid">현황</button>
     <button data-tab="gridset">설정</button>
+    <button data-tab="gridbt">백테스트</button>
   </div>
 </nav>
 <main>
@@ -225,6 +226,13 @@ nav .grp.h{--c:var(--home)}
   <!-- ================= 대시보드 ================= -->
   <section id="tab-home">
     <div class="grid" id="hTotals"></div>
+    <div class="card" style="margin-top:12px">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <h3 style="margin:0">거래소 잔고</h3><span class="hint" id="balAt">저장된 API 키로 조회합니다 (주문 안 함)</span>
+        <span class="spacer"></span><button type="button" id="btnBal">잔고 조회</button>
+      </div>
+      <div id="balBody"></div>
+    </div>
     <div class="hcols">
       <div class="card hbot m" id="hMartin"></div>
       <div class="card hbot g" id="hGrid"></div>
@@ -413,16 +421,19 @@ nav .grp.h{--c:var(--home)}
     </div>
     <div id="gCfgErr" class="err"></div>
 
-    <h2>Grid 백테스트</h2>
-    <div class="note">위에 입력된 값(저장 전이어도)으로 과거 1시간봉을 시뮬레이션합니다. 지정가는 주문 가격 그대로 체결, 수수료 반영. 한 시간봉 안에서 사고 바로 파는 건 세지 않는 보수적 계산입니다.</div>
-    <div class="card" style="margin-top:10px">
-      <div class="row"><label>코인</label><select id="gBtCoin"></select><div class="hint">위 코인별 칸에 입력된 값으로 돌립니다</div></div>
+  </section>
+
+  <!-- ================= Grid 백테스트 ================= -->
+  <section id="tab-gridbt" class="hidden">
+    <div class="note"><b>Grid 설정</b> 탭에 입력된 값(저장 전이어도)으로 과거 1시간봉을 시뮬레이션합니다. 지정가는 주문 가격 그대로 체결, 수수료 반영. 한 시간봉 안에서 사고 바로 파는 건 세지 않는 보수적 계산입니다.</div>
+    <div class="card" style="margin-top:12px">
+      <div class="row"><label>코인</label><select id="gBtCoin"></select><div class="hint" id="gBtSum"></div></div>
       <div class="row"><label>기간</label><select id="gBtDays"><option value="30">1개월</option><option value="90">3개월</option><option value="180" selected>6개월</option><option value="365">1년</option></select></div>
       <div class="row"><label id="gBtCountsLabel">비교 후보</label><input id="gBtCounts"><div class="hint" id="gBtCountsHint"></div></div>
       <div class="row"><span></span><div><button class="primary" id="gBtRun">이 설정으로 백테스트</button> <button id="gBtSweep">후보 비교</button> <span id="gBtProg" class="hint"></span></div></div>
     </div>
     <div id="gBtErr" class="err"></div>
-<div id="gBtResult" class="slide hidden">
+    <div id="gBtResult" class="slide hidden">
       <div class="slidehead"><h2 id="gBtResTitle">Grid 백테스트 결과</h2><span class="spacer"></span>
         <button type="button" class="small" data-slide-toggle>접기 ▲</button>
         <button type="button" class="small" data-slide-close>닫기 ✕</button></div>
@@ -462,10 +473,10 @@ function showErr(el, errs) { el.style.display = errs && errs.length ? 'block' : 
 document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
   document.querySelectorAll('nav button').forEach(x => x.classList.toggle('act', x === b));
   window.scrollTo({top: 0});
-  ['home', 'dash', 'settings', 'bt', 'grid', 'gridset'].forEach(t => $('#tab-' + t).classList.toggle('hidden', t !== b.dataset.tab));
+  ['home', 'dash', 'settings', 'bt', 'grid', 'gridset', 'gridbt'].forEach(t => $('#tab-' + t).classList.toggle('hidden', t !== b.dataset.tab));
   if (b.dataset.tab === 'home') hRender();
   if (b.dataset.tab === 'grid') gRefresh();
-  if (b.dataset.tab === 'gridset') gSyncAll();
+  if (b.dataset.tab === 'gridset' || b.dataset.tab === 'gridbt') gSyncAll();
 });
 
 // ---------------- 설정 ----------------
@@ -594,6 +605,23 @@ $('#btnTest').onclick = async () => {
   const ipTxt = r.ip ? `  |  이 프로그램의 IP: ${r.ip} (거래소 허용 IP에 이 값을 등록)` : '';
   $('#testRes').textContent = (r.ok ? `성공 — 원화 ${won(r.krw)}, ` + Object.entries(r.coins).map(([k, v]) => `${k} ${v}`).join(', ') : '실패: ' + r.errors.join(' ') + ' — 키 오타, 권한(잔고 조회), 허용 IP를 확인하세요.') + ipTxt;
   if (r.ok) $('#testRes').textContent += '  ※ 확인만 한 것이니 꼭 [설정 저장]을 누르세요.';
+};
+
+// ---------------- 잔고 조회 (대시보드) ----------------
+$('#btnBal').onclick = async () => {
+  $('#btnBal').disabled = true; $('#balAt').textContent = '조회 중…';
+  try {
+    const r = await api('/api/balances');
+    $('#balAt').textContent = `${r.at} 기준 · 저장된 키로 조회`;
+    $('#balBody').innerHTML = r.accounts.map(a => {
+      const head = `<p style="margin:12px 0 6px"><b>${EXN[a.exchange] || esc(a.exchange)}</b> <span class="hint">${esc(a.bots)} 키</span>`
+        + (a.error ? '' : ` · 총 <b>${won(a.total)}</b> <span class="hint">(원화 ${won(a.krw)} + 코인 ${won(a.total - a.krw)})</span>`) + '</p>';
+      if (a.error) return head + `<div class="hint neg">실패: ${esc(a.error)}</div>`;
+      const rows = a.coins.map(c => `<tr><td>${esc(c.coin)}</td><td>${c.qty.toLocaleString('ko-KR', {maximumFractionDigits: 8})}</td><td>${c.price ? num(c.price) : '-'}</td><td>${c.value != null ? won(c.value) : '-'}</td></tr>`).join('');
+      return head + `<div class="tablewrap"><table><thead><tr><th>코인</th><th>보유 수량</th><th>현재가</th><th>평가금액</th></tr></thead><tbody>${rows || '<tr><td colspan="4" class="hint">보유 코인 없음</td></tr>'}</tbody></table></div>`;
+    }).join('');
+  } catch (e) { $('#balAt').textContent = '조회 실패: ' + e.message; }
+  $('#btnBal').disabled = false;
 };
 
 // ---------------- 실행 ----------------
@@ -1008,7 +1036,16 @@ function gSyncAll() { gEds().forEach(gSyncEd); gBtCoins(); }
 function gBtCoins() {
   const cur = $('#gBtCoin').value, names = gEds().map(d => d.dataset.coin);
   $('#gBtCoin').innerHTML = names.map(n => `<option ${n === cur ? 'selected' : ''}>${esc(n)}</option>`).join('');
-  gSyncCand();
+  gSyncCand(); gBtSum();
+}
+function gBtSum() {
+  const d = gEd($('#gBtCoin').value), sum = d ? d.querySelector('[data-sum]').textContent : '';
+  $('#gBtSum').innerHTML = (sum ? esc(sum) + ' · ' : '') + '<a href="#" id="gBtGoSet">Grid 설정에서 바꾸기</a>';
+  $('#gBtGoSet').onclick = e => { e.preventDefault(); gGoEd(d); };
+}
+function gGoEd(d) {
+  document.querySelector('nav button[data-tab="gridset"]').click();
+  if (d) { d.open = true; d.scrollIntoView({behavior: 'smooth', block: 'start'}); }
 }
 let gCandMode = null;
 function gSyncCand() {
@@ -1021,7 +1058,7 @@ function gSyncCand() {
   $('#gBtCountsHint').textContent = mode === 'gap' ? '하단·칸 수·칸당 금액은 그대로 두고 간격만 바꿔 비교합니다 (간격이 넓으면 범위도 넓어짐)'
     : '총 예산(칸 수 × 칸당 금액)은 그대로 두고 칸 수만 바꿔 비교합니다';
 }
-$('#gBtCoin').addEventListener('input', gSyncCand);
+$('#gBtCoin').addEventListener('input', () => { gSyncCand(); gBtSum(); });
 async function gLoadConfig() {
   gcfg = await api('/api/grid/config');
   GG.forEach(k => $('#gc_' + k).value = gcfg[k] ?? '');
@@ -1243,8 +1280,7 @@ function gRenderSweep(r) {
       if (!confirm(`${r.coin} 칸 수 ${x.grids}, 칸당 ${won(x.krw_per_grid)}을 설정 칸에 넣을까요? (저장해야 반영)`)) return;
       K('grids').value = x.grids; K('krw_per_grid').value = Math.floor(x.krw_per_grid / 100) * 100;
     }
-    d.open = true; gSyncEd(d);
-    d.scrollIntoView({behavior: 'smooth', block: 'start'});
+    gSyncEd(d); gGoEd(d);
   });
 }
 
