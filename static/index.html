@@ -1374,11 +1374,10 @@ async function loadBalances() {
     $('#hBal').innerHTML = r.accounts.map(a => {
       const head = `<p style="margin:8px 0 4px"><b>${EXN[a.exchange] || esc(a.exchange)}</b> <span class="hint">${a.bots.join(' · ')} 계좌</span></p>`;
       if (!a.ok) return head + `<p class="neg" style="margin:0">조회 실패: ${esc(a.error)}</p>`;
-      const rows = a.coins.map(c => `<tr><td><b>${esc(c.coin)}</b></td><td>${c.price ? num(c.price) : '-'}</td><td>${c.value == null ? '<span class="hint">시세 없음</span>' : won(c.value)}</td></tr>`).join('');
       return head + `<div class="mini">
           <div><span class="k">총 평가금액</span><span class="v">${won(a.total)}</span></div>
           <div><span class="k">원화</span><span class="v">${won(a.krw)}${a.krw_avail < a.krw ? ` <small>주문 가능 ${won(a.krw_avail)}</small>` : ''}</span></div>
-        </div>` + (rows ? `<div class="tablewrap"><table><thead><tr><th>코인</th><th>현재가</th><th>평가금액</th></tr></thead><tbody>${rows}</tbody></table></div>` : '');
+        </div>`;
     }).join('');
   } catch (e) {
     $('#balAt').textContent = '';
