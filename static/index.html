@@ -145,7 +145,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:var(--dom);box
 input[readonly]{background:var(--chip)}
 .note{background:color-mix(in srgb,var(--dom) 7%,var(--card));border:1px solid color-mix(in srgb,var(--dom) 22%,var(--line));color:var(--ink2)}
 .alert.warn{border:1px solid color-mix(in srgb,var(--warn) 30%,transparent)}
-.stick{background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(6px)}
+.stick{background:var(--bg)}
 .coinzone{background:var(--zone)}
 .logs{background:var(--chip);border-color:var(--line)}
 .gbar,.mbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-top:3px solid var(--dom)}
@@ -452,6 +452,11 @@ nav .grp.h{--c:var(--home)}
 
 <script>
 const $ = s => document.querySelector(s);
+// 3초 갱신용: 내용이 그대로면 화면을 다시 그리지 않음 (휴대폰에서 매번 다시 그리면 화면이 깨지거나 느려짐)
+const H = sel => ({
+  set innerHTML(h) { const el = $(sel); if (el && el._h !== h) el.innerHTML = el._h = h; },
+  set textContent(t) { const el = $(sel); if (el && el.textContent !== t) el.textContent = t; },
+});
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const won = v => v == null ? '-' : Math.round(v).toLocaleString('ko-KR') + '원';
 const num = v => { if (v == null) return '-'; const a = Math.abs(v), d = a >= 1000 ? 0 : a >= 10 ? 2 : 4; return v.toLocaleString('ko-KR', {maximumFractionDigits: d}); };
@@ -684,7 +689,7 @@ async function refresh() {
   $('#ver').textContent = s.version ? 'v' + s.version : '';
   $('#btnStart').disabled = s.running; $('#btnStop').disabled = !s.running;
   const budgetTxt = t.budget > 0 ? `한도 ${won(t.budget)} 중 ${(t.cost / t.budget * 100).toFixed(0)}%` : '한도 없음';
-  $('#totals').innerHTML = [
+  H('#totals').innerHTML = [
     ['총 투입금', won(t.cost), budgetTxt],
     ['평가손익', `<span class="${cls(t.pnl)}">${signed(t.pnl)}</span>`, t.cost ? pct(t.pnl / t.cost * 100) : ''],
     ['누적 실현손익', `<span class="${cls(t.realized)}">${signed(t.realized)}</span>`, `${t.cycles}개 사이클 완료`],
@@ -692,7 +697,7 @@ async function refresh() {
   ].map(([k, v, sub]) => `<div class="card stat"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${sub}</div></div>`).join('')
     + (s.last_error ? `<div class="card stat"><div class="k">최근 오류</div><div class="s neg">${esc(s.last_error)}</div></div>` : '');
   document.querySelectorAll('#coinCards details').forEach((d, i) => d.open ? openDetails.add(i) : openDetails.delete(i));
-  $('#coinCards').innerHTML = s.coins.map(c => coinCard(c, s.running)).join('');
+  H('#coinCards').innerHTML = s.coins.map(c => coinCard(c, s.running)).join('');
   document.querySelectorAll('#coinCards details').forEach((d, i) => { if (openDetails.has(i)) d.open = true; });
   document.querySelectorAll('[data-reset]').forEach(b => b.onclick = async () => {
     if (!confirm(`${b.dataset.reset} 봇 기록(단계·평단)을 초기화할까요? 거래소 잔고는 그대로입니다.`)) return;
@@ -703,10 +708,10 @@ async function refresh() {
     showErr($('#globalErr'), (await api('/api/resume-coin', {coin: b.dataset.resume})).errors); refresh();
   });
   const hist = s.coins.flatMap(c => c.stats.history.map(h => ({...h, coin: c.coin}))).sort((a, b) => String(b.ended_at).localeCompare(String(a.ended_at))).slice(0, 30);
-  $('#mHist tbody').innerHTML = hist.map(h => `<tr><td>${esc(h.ended_at).slice(5, 16)}</td><td>${esc(h.coin)}</td><td>${esc(h.reason)}</td><td>${h.steps}단계</td>
+  H('#mHist tbody').innerHTML = hist.map(h => `<tr><td>${esc(h.ended_at).slice(5, 16)}</td><td>${esc(h.coin)}</td><td>${esc(h.reason)}</td><td>${h.steps}단계</td>
     <td>${h.avg_price ? num(h.avg_price) : '-'}</td><td>${h.sell_price ? num(h.sell_price) : '-'}</td><td>${won(h.cost)}</td>
     <td class="${cls(h.profit)}">${signed(h.profit)} (${h.profit_pct}%)</td></tr>`).join('') || '<tr><td colspan="8" class="hint">아직 없음</td></tr>';
-  $('#logs').textContent = s.logs.join('\n');
+  H('#logs').textContent = s.logs.join('\n');
   hRender();
 }
 
@@ -884,7 +889,7 @@ function renderSweep(r) {
 }
 
 loadConfig().then(refresh);
-setInterval(refresh, 3000);
+setInterval(() => { if (!document.hidden) refresh(); }, 3000);  // 다른 앱·화면 꺼짐일 땐 갱신 쉼
 
 // ================= Grid =================
 const GG = ['mode', 'exchange', 'fee_pct', 'check_interval_sec', 'access_key', 'secret_key'];
@@ -1163,8 +1168,8 @@ async function gRefresh() {
   $('#gModePill').textContent = s.mode === 'live' ? '실전' : '모의투자'; $('#gModePill').className = 'pill' + (s.mode === 'live' ? ' live' : '');
   $('#gExPill').textContent = EXN[s.exchange] || s.exchange;
   $('#gStart').disabled = s.running || s.stopping; $('#gStop').disabled = !s.running;
-  $('#gAlerts').innerHTML = s.last_error ? `<div class="alert bad">최근 오류: ${esc(s.last_error)}</div>` : '';
-  $('#gTotals').innerHTML = [
+  H('#gAlerts').innerHTML = s.last_error ? `<div class="alert bad">최근 오류: ${esc(s.last_error)}</div>` : '';
+  H('#gTotals').innerHTML = [
     ['누적 실현 수익', `<span class="${cls(t.realized)}">${signed(t.realized)}</span>`, `왕복 ${t.round_trips}회 · 수수료 ${won(t.fees)}`],
     ['보유 코인 평가손익', `<span class="${cls(t.unrealized)}">${signed(t.unrealized)}</span>`, `매수 금액 ${won(t.hold_cost)}`],
     ['매수 대기 주문', won(t.buy_orders_krw), '지정가로 걸어둔 원화 (실전에선 묶인 돈)'],
@@ -1173,7 +1178,7 @@ async function gRefresh() {
   document.querySelectorAll('#gCoins details[data-gc]').forEach(d => d.open ? gOpen.add(d.dataset.gc) : gOpen.delete(d.dataset.gc));
   if (gFirst && s.coins.length === 1) gOpen.add(s.coins[0].sid);
   gFirst = false;
-  $('#gCoins').innerHTML = s.coins.map(c => gCoinCard(c, s)).join('') || '<div class="card hint">Grid 설정에서 코인을 추가하세요.</div>';
+  H('#gCoins').innerHTML = s.coins.map(c => gCoinCard(c, s)).join('') || '<div class="card hint">Grid 설정에서 코인을 추가하세요.</div>';
   document.querySelectorAll('#gCoins details[data-gc]').forEach(d => { if (gOpen.has(d.dataset.gc)) d.open = true; });
   document.querySelectorAll('[data-gclear]').forEach(b => b.onclick = async () => {
     const coin = b.dataset.coin, sell = b.dataset.gclear === 'sell';
@@ -1182,9 +1187,9 @@ async function gRefresh() {
     const r = await api('/api/grid/clear', {coin, action: b.dataset.gclear}); showErr($('#gErr'), r.errors); gRefresh();
   });
   const hist = s.coins.flatMap(c => c.stats.history.map(h => ({...h, coin: c.sid}))).sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 30);
-  $('#gHist tbody').innerHTML = hist.map(h => `<tr><td>${esc(h.at).slice(5, 16)}</td><td>${esc(h.coin)}</td><td>${esc(h.cell)}</td><td>${num(h.buy)}</td><td>${num(h.sell)}</td><td>${won(h.cost)}</td><td class="${cls(h.profit)}">${signed(h.profit)}</td></tr>`).join('')
+  H('#gHist tbody').innerHTML = hist.map(h => `<tr><td>${esc(h.at).slice(5, 16)}</td><td>${esc(h.coin)}</td><td>${esc(h.cell)}</td><td>${num(h.buy)}</td><td>${num(h.sell)}</td><td>${won(h.cost)}</td><td class="${cls(h.profit)}">${signed(h.profit)}</td></tr>`).join('')
     || '<tr><td colspan="7" class="hint">아직 없음</td></tr>';
-  $('#gLogs').textContent = s.logs.join('\n') || '아직 없음';
+  H('#gLogs').textContent = s.logs.join('\n') || '아직 없음';
 }
 
 let gChart, gBtSid = '';
@@ -1308,7 +1313,7 @@ function hRender() {
   const tM = tev.filter(e => e.bot === 'M').reduce((a, e) => a + e.profit, 0), tG = tev.filter(e => e.bot === 'G').reduce((a, e) => a + e.profit, 0);
   const realized = mt.realized + gt.realized, unreal = (mt.pnl || 0) + (gt.unrealized || 0);
   const working = mt.cost + gt.hold_cost + gt.buy_orders_krw;
-  $('#hTotals').innerHTML = [
+  H('#hTotals').innerHTML = [
     ['오늘 실현 수익', `<span class="${cls(tM + tG)}">${signed(tM + tG)}</span>`, `Martin ${signed(tM)} · Grid ${signed(tG)} · ${tev.length}건`],
     ['누적 실현 수익', `<span class="${cls(realized)}">${signed(realized)}</span>`, `Martin ${signed(mt.realized)} · Grid ${signed(gt.realized)}`],
     ['지금 평가손익', `<span class="${cls(unreal)}">${signed(unreal)}</span>`, `Martin ${signed(mt.pnl)} · Grid ${signed(gt.unrealized)}`],
@@ -1321,7 +1326,7 @@ function hRender() {
     return `<tr><td><b>${esc(c.coin)}</b></td><td>${st}</td><td>${p.step ? `${p.step}/${c.max_steps}단계` : '-'}</td>
       <td class="${cls(p.pnl)}">${p.step ? signed(p.pnl) : '-'}</td><td class="${cls(c.stats.realized)}">${signed(c.stats.realized)} <small class="hint">${c.stats.cycles}회</small></td></tr>`;
   }).join('');
-  $('#hMartin').innerHTML = `<div class="hh"><h3>Martin</h3><span class="pill ${m.running ? 'martinp' : ''}">${m.running ? '실행 중' : '정지'}</span>${mode(m.mode)}<span class="pill">${EXN[m.exchange] || ''}</span>
+  H('#hMartin').innerHTML = `<div class="hh"><h3>Martin</h3><span class="pill ${m.running ? 'martinp' : ''}">${m.running ? '실행 중' : '정지'}</span>${mode(m.mode)}<span class="pill">${EXN[m.exchange] || ''}</span>
       <span class="spacer"></span><button class="small" data-go="dash">현황 보기</button></div>
     <div class="mini">
       <div><span class="k">누적 실현</span><span class="v ${cls(mt.realized)}">${signed(mt.realized)} <small>${mt.cycles}사이클</small></span></div>
@@ -1336,7 +1341,7 @@ function hRender() {
     return `<tr><td><b>${esc(c.coin)}</b></td><td>${st}</td><td>${cells.length ? `${held}/${cells.length}칸 보유` : '-'}</td>
       <td class="${cls(c.total.unrealized)}">${c.total.hold_qty ? signed(c.total.unrealized) : '-'}</td><td class="${cls(c.stats.realized)}">${signed(c.stats.realized)} <small class="hint">${c.stats.round_trips}회</small></td></tr>`;
   }).join('');
-  $('#hGrid').innerHTML = `<div class="hh"><h3>Grid</h3><span class="pill ${g.running ? 'gridp' : ''}">${g.stopping ? '정지 중' : g.running ? '실행 중' : '정지'}</span>${mode(g.mode)}<span class="pill">${EXN[g.exchange] || ''}</span>
+  H('#hGrid').innerHTML = `<div class="hh"><h3>Grid</h3><span class="pill ${g.running ? 'gridp' : ''}">${g.stopping ? '정지 중' : g.running ? '실행 중' : '정지'}</span>${mode(g.mode)}<span class="pill">${EXN[g.exchange] || ''}</span>
       <span class="spacer"></span><button class="small" data-go="grid">현황 보기</button></div>
     <div class="mini">
       <div><span class="k">누적 실현</span><span class="v ${cls(gt.realized)}">${signed(gt.realized)} <small>${gt.round_trips}회 왕복</small></span></div>
@@ -1346,7 +1351,7 @@ function hRender() {
     <div class="tablewrap"><table><thead><tr><th>코인</th><th>상태</th><th>격자</th><th>평가손익</th><th>실현</th></tr></thead><tbody>${gRows || '<tr><td colspan="5" class="hint">코인 없음</td></tr>'}</tbody></table></div>`;
   document.querySelectorAll('#tab-home [data-go]').forEach(b => b.onclick = () => document.querySelector(`nav button[data-tab="${b.dataset.go}"]`).click());
 
-  $('#hRecent tbody').innerHTML = ev.slice(-12).reverse().map(e => `<tr><td>${esc(e.at).slice(5, 16)}</td>
+  H('#hRecent tbody').innerHTML = ev.slice(-12).reverse().map(e => `<tr><td>${esc(e.at).slice(5, 16)}</td>
     <td><span class="pill ${e.bot === 'M' ? 'martinp' : 'gridp'}">${e.bot === 'M' ? 'Martin' : 'Grid'}</span></td><td>${esc(e.coin)}</td><td>${esc(e.what)}</td>
     <td>${e.buy ? num(e.buy) : '-'}</td><td>${e.sell ? num(e.sell) : '-'}</td><td class="${cls(e.profit)}">${signed(e.profit)}</td></tr>`).join('')
     || '<tr><td colspan="7" class="hint">아직 완료된 매매가 없습니다. 봇을 시작하면 여기에 쌓입니다.</td></tr>';
@@ -1401,7 +1406,8 @@ $('#btnBal').onclick = loadBalances;
 loadBalances();
 
 gLoadConfig().then(gRefresh);
-setInterval(gRefresh, 3000);
+setInterval(() => { if (!document.hidden) gRefresh(); }, 3000);  // 다른 앱·화면 꺼짐일 땐 갱신 쉼
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { refresh(); gRefresh(); } });
 </script>
 </body>
 </html>
