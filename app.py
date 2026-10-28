@@ -181,6 +181,51 @@ def test_keys():
         return jsonify({"ok": False, "errors": [str(e)], "ip": my_public_ip()})
 
 
+@app.get("/api/balances")
+def balances():
+    """저장된 API 키로 거래소 잔고 조회 (Martin·Grid 가 같은 계좌면 한 번만). 주문은 하지 않음"""
+    accounts = []
+    for who, exch, keys in (("Martin", bot.cfg["exchange"], (bot.cfg["access_key"], bot.cfg["secret_key"])),
+                            ("Grid", grid.cfg["exchange"], grid._keys())):
+        same = next((a for a in accounts if a["_id"] == (exch, keys[0])), None)
+        if same:
+            same["bots"].append(who)
+            continue
+        if who == "Grid" and not keys[0]:
+            continue  # Grid 를 다른 거래소로 두고 키를 안 넣었으면 (Grid 미사용) 생략
+        acc = {"_id": (exch, keys[0]), "bots": [who], "exchange": exch, "ok": False}
+        accounts.append(acc)
+        if not keys[0] or not keys[1]:
+            acc["error"] = "API 키가 등록되지 않았습니다. 설정에서 키를 넣고 저장하세요."
+            continue
+        ex = exchange_class(exch)(*keys)
+        try:
+            det = ex.balance_detail()
+        except Exception as e:
+            acc["error"] = str(e)
+            continue
+        krw, krw_av = det.pop("KRW", (0.0, 0.0))
+        held = {c: q for c, q in det.items() if q[0] > 0}
+        markets = [f"KRW-{c}" for c in held]
+        try:
+            px = ex.prices(markets) if markets else {}
+        except Exception:
+            px = {}
+            for m in markets:
+                try:
+                    px[m] = ex.price(m)
+                except Exception:
+                    pass
+        coins = [{"coin": c, "qty": q[0], "avail": q[1], "price": px.get(f"KRW-{c}"),
+                  "value": q[0] * px[f"KRW-{c}"] if f"KRW-{c}" in px else None} for c, q in held.items()]
+        coins.sort(key=lambda x: -(x["value"] or 0))
+        acc.update(ok=True, krw=krw, krw_avail=krw_av, coins=coins,
+                   total=krw + sum(x["value"] or 0 for x in coins))
+    for a in accounts:
+        a.pop("_id")
+    return jsonify({"ok": True, "accounts": accounts})
+
+
 @app.post("/api/backtest")
 def backtest():
     if bt_state["running"]:
