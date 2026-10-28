@@ -402,7 +402,7 @@ nav .grp.h{--c:var(--home)}
 
     <div class="coinzone">
       <h2>코인별 격자</h2>
-      <span class="hint">코인 이름을 누르면 펼쳐집니다. 코인마다 범위·간격·금액을 따로 정합니다.</span>
+      <span class="hint">코인 이름을 누르면 펼쳐집니다. 코인마다 범위·간격·금액을 따로 정합니다. 이미 있는 코인을 한 번 더 추가하면 같은 코인에 그리드를 하나 더(예: BTC-2) 만듭니다.</span>
       <div id="gEditors"></div>
       <div class="card" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         <span class="hint">코인 추가</span>
@@ -892,7 +892,9 @@ let gcfg = {coins: []}, gstat = null;
 const gTicks = {};
 const rTick = (v, t) => t > 0 ? Math.round(v / t) * t : Math.round(v);
 const G_CAND = {gap: '0.5,0.8,1,1.5,2', range: '5,10,15,20,30,40'};
-const gEd = coin => document.querySelector(`#gEditors .coinedit[data-coin="${coin}"]`);
+// 그리드 이름: 같은 코인에 그리드를 여러 개 둘 때 BTC, BTC-2 … 로 구분 (첫 그리드는 코인 이름 그대로)
+const gSid = c => c.tag ? `${c.coin}-${c.tag}` : c.coin;
+const gEd = sid => document.querySelector(`#gEditors .coinedit[data-sid="${sid}"]`);
 const gEds = () => [...document.querySelectorAll('#gEditors .coinedit')];
 
 function martinOverlap(coin, gexch, gmode) {
@@ -928,13 +930,14 @@ function gLevels(o, t) {
 }
 function gEditor(c, open) {
   const d = document.createElement('details');
-  d.className = 'coinedit'; d.dataset.coin = c.coin; if (open) d.open = true;
+  d.className = 'coinedit'; d.dataset.coin = c.coin; d.dataset.tag = c.tag || ''; d.dataset.sid = gSid(c); if (open) d.open = true;
   d.style.setProperty('--cc', coinColor(c.coin));
   const v = k => esc(c[k] ?? '');
   const sel = (k, opts) => `<select data-k="${k}">${opts.map(([val, t]) => `<option value="${val}" ${String(c[k]) === val ? 'selected' : ''}>${t}</option>`).join('')}</select>`;
-  d.innerHTML = `<summary><span class="cdot"></span><span class="ctag">${esc(c.coin)}</span><span class="hint" data-sum></span><span class="spacer"></span><span data-warnbadge></span></summary>
+  d.innerHTML = `<summary><span class="cdot"></span><span class="ctag">${esc(gSid(c))}</span><span class="hint" data-sum></span><span class="spacer"></span><span data-warnbadge></span></summary>
     <div class="body">
       <div data-warn></div>
+      ${c.tag ? `<div class="hint" style="margin-bottom:8px">${esc(c.coin)}의 추가 그리드입니다. 다른 ${esc(c.coin)} 그리드와 칸·주문·보유 수량을 따로 기록합니다. 원화 잔고는 함께 쓰고, 거래소 앱의 ${esc(c.coin)} 보유 수량은 합계로 보입니다.</div>` : ''}
       <div class="row"><label>이 코인 Grid</label><div><input type="checkbox" data-k="enabled" ${c.enabled ? 'checked' : ''}> <span class="hint">끄면 이 코인은 주문을 걸지 않습니다 (기록은 유지)</span></div></div>
       <div class="row"><label>범위 정하는 방식</label>${sel('range_mode', [['gap', '간격 %로 — 하단 + 간격 + 칸 수 → 상단 자동 (추천)'], ['range', '하단·상단 직접 입력']])}</div>
       <div class="row"><label>하단 가격 (원)</label><input data-k="lower" type="number" value="${+c.lower || ''}"><div class="hint">가장 아래 칸에서 사는 가격. 이보다 더 떨어지면 더 사지 않습니다</div></div>
@@ -958,13 +961,13 @@ function gEditor(c, open) {
     </div>`;
   const X = n => d.querySelector(`[data-x="${n}"]`);
   d.querySelectorAll('[data-k],[data-x="countby"],[data-x="budget"]').forEach(el => el.addEventListener('input', () => { gSyncEd(d); if (el.dataset.k === 'range_mode') gSyncCand(); }));
-  X('del').onclick = () => { if (confirm(`${c.coin} 을(를) Grid 목록에서 삭제할까요? (저장해야 반영)`)) { d.remove(); gBtCoins(); } };
+  X('del').onclick = () => { if (confirm(`${gSid(c)} 을(를) Grid 목록에서 삭제할까요? (저장해야 반영)`)) { d.remove(); gBtCoins(); } };
   X('suggest').onclick = () => gSuggest(d);
   gSyncEd(d);
   return d;
 }
 function gReadEd(d) {
-  const o = {coin: d.dataset.coin};
+  const o = {coin: d.dataset.coin, tag: d.dataset.tag || ''};
   d.querySelectorAll('[data-k]').forEach(el => o[el.dataset.k] = el.type === 'checkbox' ? el.checked : el.value);
   return o;
 }
@@ -1014,7 +1017,7 @@ function gSyncEd(d) {
 function gSyncAll() { gEds().forEach(gSyncEd); gBtCoins(); }
 ['#gc_mode', '#gc_exchange', '#gc_fee_pct'].forEach(id => $(id).addEventListener('input', gSyncAll));
 function gBtCoins() {
-  const cur = $('#gBtCoin').value, names = gEds().map(d => d.dataset.coin);
+  const cur = $('#gBtCoin').value, names = gEds().map(d => d.dataset.sid);
   $('#gBtCoin').innerHTML = names.map(n => `<option ${n === cur ? 'selected' : ''}>${esc(n)}</option>`).join('');
   gSyncCand(); gBtSum();
 }
@@ -1050,9 +1053,18 @@ $('#gAddSel').onchange = () => $('#gAddTxt').classList.toggle('hidden', $('#gAdd
 $('#gAddBtn').onclick = () => {
   const name = ($('#gAddSel').value === '_' ? $('#gAddTxt').value : $('#gAddSel').value).trim().toUpperCase();
   if (!/^[A-Z0-9]{2,10}$/.test(name)) return alert('코인 심볼을 영문으로 입력하세요. 예: DOGE');
-  if (gEd(name)) return alert('이미 있는 코인입니다.');
+  let tag = '';
+  if (gEds().some(d => d.dataset.coin === name)) {
+    let n = 2; while (gEd(`${name}-${n}`)) n++;
+    tag = String(n);
+    if (!confirm(`${name} 그리드가 이미 있습니다. ${name} 그리드를 하나 더(${name}-${tag}) 만들까요?\n\n` +
+      `기존 그리드는 그대로 두고, 새 그리드는 범위·칸·금액·기록을 따로 가집니다.\n` +
+      `· 원화 잔고를 함께 쓰므로 두 그리드 예산 합계만큼 원화가 필요합니다\n` +
+      `· 범위가 겹치면 같은 가격대에 매수가 두 배로 걸립니다\n` +
+      `· 거래소 앱의 ${name} 보유 수량은 두 그리드 합계로 보입니다`)) return;
+  }
   const base = gcfg.coins[0] || {};
-  const d = gEditor({...base, coin: name, enabled: true, lower: 0, upper: 0, stop_loss_enabled: false, stop_loss_price: 0}, true);
+  const d = gEditor({...base, coin: name, tag, enabled: true, lower: 0, upper: 0, stop_loss_enabled: false, stop_loss_price: 0}, true);
   $('#gEditors').appendChild(d); gBtCoins();
   d.scrollIntoView({behavior: 'smooth', block: 'start'});
 };
@@ -1087,7 +1099,7 @@ async function gSuggest(d) {
 }
 $('#gGoSet').onclick = () => document.querySelector('nav button[data-tab="gridset"]').click();
 $('#gStart').onclick = async () => {
-  const on = (gcfg.coins || []).filter(c => c.enabled).map(c => c.coin).join(', ');
+  const on = (gcfg.coins || []).filter(c => c.enabled).map(gSid).join(', ');
   if (gcfg.mode === 'live' && !confirm(`실전 모드로 ${EXN[gcfg.exchange]} Grid [${on}]를 시작합니다. 계속할까요?`)) return;
   const r = await api('/api/grid/start', {}); showErr($('#gErr'), r.errors); gRefresh();
 };
@@ -1123,7 +1135,7 @@ function gCoinCard(c, s) {
   const range = cells.length ? `${num(cells[0].buy)} ~ ${num(cells[cells.length - 1].sell)} · ${cells.length}칸` : sm ? `${num(sm.levels[0])} ~ ${num(sm.levels[sm.levels.length - 1])} · ${sm.cells}칸 (시작하면 생성)` : '범위 미설정';
   const canClear = !s.running && !s.stopping && (cells.length || c.paused);
   return `<div class="card gcoin" style="--cc:${coinColor(c.coin)}">
-    <div class="coinhead"><span class="cdot"></span><h3>${esc(c.coin)}</h3>${chip}${w ? `<span class="pill ${w.block ? 'live' : 'warn'}">Martin과 중복</span>` : ''}<span class="spacer"></span><span class="hint">현재가</span><b>${num(c.price)}</b></div>
+    <div class="coinhead"><span class="cdot"></span><h3>${esc(c.sid)}</h3>${chip}${w ? `<span class="pill ${w.block ? 'live' : 'warn'}">Martin과 중복</span>` : ''}<span class="spacer"></span><span class="hint">현재가</span><b>${num(c.price)}</b></div>
     ${alerts}
     <div class="mini">
       <div><span class="k">범위</span><span class="v">${range}</span></div>
@@ -1131,16 +1143,16 @@ function gCoinCard(c, s) {
       <div><span class="k">보유 평가손익</span><span class="v ${cls(t.unrealized)}">${t.hold_qty ? signed(t.unrealized) : '-'} <small>${t.hold_qty ? '매수 ' + won(t.hold_cost) : '보유 없음'}</small></span></div>
       <div><span class="k">매수 대기 주문</span><span class="v">${won(t.buy_orders_krw)} <small>${cells.filter(x => x.st === 'buy').length}개${c.max_buy_orders ? ` / 최대 ${c.max_buy_orders}개` : ''} · 예산 ${won(t.budget)}</small></span></div>
     </div>
-    ${cells.length ? `<details data-gc="${esc(c.coin)}"><summary>격자 ${cells.length}칸 보기</summary>
+    ${cells.length ? `<details data-gc="${esc(c.sid)}"><summary>격자 ${cells.length}칸 보기</summary>
       <div class="tablewrap"><table><thead><tr><th>칸</th><th>매수가</th><th>매도가</th><th>상태</th><th>보유 수량</th><th>매수 금액</th></tr></thead><tbody>${rows.join('')}</tbody></table></div></details>` : ''}
-    ${canClear ? `<p class="clearrow"><span class="hint">정리:</span> <button class="danger small" data-gclear="sell" data-coin="${esc(c.coin)}">보유분 시장가 매도 후 비우기</button>
-      <button class="small" data-gclear="forget" data-coin="${esc(c.coin)}">기록만 비우기</button></p>` : ''}
+    ${canClear ? `<p class="clearrow"><span class="hint">정리:</span> <button class="danger small" data-gclear="sell" data-coin="${esc(c.sid)}">보유분 시장가 매도 후 비우기</button>
+      <button class="small" data-gclear="forget" data-coin="${esc(c.sid)}">기록만 비우기</button></p>` : ''}
   </div>`;
 }
 async function gRefresh() {
   const s = gstat = await api('/api/grid/status'), t = s.total;
   (s.coins || []).forEach(c => { if (c.minfo && c.minfo.tick) gTicks[c.coin] = c.minfo.tick; });
-  const runCoins = s.coins.filter(c => c.enabled && !c.paused).map(c => c.coin);
+  const runCoins = s.coins.filter(c => c.enabled && !c.paused).map(c => c.sid);
   $('#gridPill').textContent = s.stopping ? 'Grid 정지 중' : s.running ? `Grid 실행 중 · ${runCoins.join(', ')}` : 'Grid 정지';
   $('#gridPill').className = 'pill' + (s.running || s.stopping ? ' gridp' : '');
   gRunning = s.running || s.stopping; updateAllBtns();
@@ -1159,7 +1171,7 @@ async function gRefresh() {
     ['총 예산', won(t.budget), `켜진 코인 ${s.coins.filter(c => c.enabled).length}개 합계`],
   ].map(([k, v, sub]) => `<div class="card stat"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${sub}</div></div>`).join('');
   document.querySelectorAll('#gCoins details[data-gc]').forEach(d => d.open ? gOpen.add(d.dataset.gc) : gOpen.delete(d.dataset.gc));
-  if (gFirst && s.coins.length === 1) gOpen.add(s.coins[0].coin);
+  if (gFirst && s.coins.length === 1) gOpen.add(s.coins[0].sid);
   gFirst = false;
   $('#gCoins').innerHTML = s.coins.map(c => gCoinCard(c, s)).join('') || '<div class="card hint">Grid 설정에서 코인을 추가하세요.</div>';
   document.querySelectorAll('#gCoins details[data-gc]').forEach(d => { if (gOpen.has(d.dataset.gc)) d.open = true; });
@@ -1169,17 +1181,18 @@ async function gRefresh() {
       : `${coin} Grid 기록(칸·주문)만 비웁니다. 거래소 잔고와 미체결 주문은 그대로입니다. 거래소 앱에서 직접 정리했을 때만 쓰세요. 계속할까요?`)) return;
     const r = await api('/api/grid/clear', {coin, action: b.dataset.gclear}); showErr($('#gErr'), r.errors); gRefresh();
   });
-  const hist = s.coins.flatMap(c => c.stats.history.map(h => ({...h, coin: c.coin}))).sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 30);
+  const hist = s.coins.flatMap(c => c.stats.history.map(h => ({...h, coin: c.sid}))).sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 30);
   $('#gHist tbody').innerHTML = hist.map(h => `<tr><td>${esc(h.at).slice(5, 16)}</td><td>${esc(h.coin)}</td><td>${esc(h.cell)}</td><td>${num(h.buy)}</td><td>${num(h.sell)}</td><td>${won(h.cost)}</td><td class="${cls(h.profit)}">${signed(h.profit)}</td></tr>`).join('')
     || '<tr><td colspan="7" class="hint">아직 없음</td></tr>';
   $('#gLogs').textContent = s.logs.join('\n') || '아직 없음';
 }
 
-let gChart;
+let gChart, gBtSid = '';
 async function gBacktest(sweep) {
   showErr($('#gBtErr'), []);
   const d = gEd($('#gBtCoin').value);
   if (!d) return showErr($('#gBtErr'), ['백테스트할 코인을 고르세요.']);
+  gBtSid = d.dataset.sid;
   gSyncEd(d);
   const body = {...gReadEd(d), exchange: $('#gc_exchange').value, fee_pct: $('#gc_fee_pct').value, days: +$('#gBtDays').value};
   if (sweep) {
@@ -1250,7 +1263,7 @@ function gRenderSweep(r) {
     <td class="${cls(x.total_pnl)}">${signed(x.total_pnl)}</td><td class="${cls(x.return_pct)}">${pct(x.return_pct)}</td>
     <td class="neg">${signed(x.worst_unrealized)}</td><td>${x.in_range_pct}%</td><td class="hint">${esc(x.note)}</td></tr>`).join('') || '<tr><td colspan="11" class="hint">결과 없음</td></tr>';
   document.querySelectorAll('#gSwTable tr.pick').forEach(tr => tr.onclick = () => {
-    const x = r.rows[+tr.dataset.i], d = gEd(r.coin);
+    const x = r.rows[+tr.dataset.i], d = gEd(gBtSid) || gEd(r.coin);
     if (!d) return;
     const K = k => d.querySelector(`[data-k="${k}"]`);
     if (byGap) {
@@ -1288,7 +1301,7 @@ function hRender() {
   const m = mstat, g = gstat, mt = m.total, gt = g.total;
   const ev = [...m.coins.flatMap(c => c.stats.history.map(h => ({bot: 'M', coin: c.coin, at: h.ended_at, profit: h.profit,
                   what: `${h.steps}단계 · ${h.reason}`, buy: h.avg_price, sell: h.sell_price}))),
-              ...g.coins.flatMap(c => c.stats.history.map(h => ({bot: 'G', coin: c.coin, at: h.at, profit: h.profit,
+              ...g.coins.flatMap(c => c.stats.history.map(h => ({bot: 'G', coin: c.sid, at: h.at, profit: h.profit,
                   what: h.reason ? `${h.reason} (보유 전체)` : `${h.cell}칸 왕복`, buy: h.buy, sell: h.sell})))]
     .filter(e => e.at).sort((a, b) => String(a.at).localeCompare(String(b.at)));
   const today = todayStr(), tev = ev.filter(e => String(e.at).startsWith(today));
