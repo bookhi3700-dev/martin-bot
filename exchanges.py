@@ -186,6 +186,11 @@ class _JwtExchange:
     def balance(self, currency):
         return self.balances().get(currency, 0.0)
 
+    def balance_detail(self):
+        """잔고 조회 화면용: {화폐: (보유 수량(주문에 묶인 것 포함), 사용 가능 수량)}"""
+        data = self._get("/v1/accounts", auth=True)
+        return {a["currency"]: (float(a["balance"]) + float(a.get("locked") or 0), float(a["balance"])) for a in data}
+
     def available(self, currency):
         """주문에 묶이지 않고 바로 쓸 수 있는 잔고 (업비트·빗썸 balance 는 원래 사용 가능 잔고)"""
         return self._bal_pair()[1].get(currency, 0.0)
@@ -451,6 +456,10 @@ class Coinone(_JwtExchange):
     def balances(self):
         """보유 수량 (주문에 묶인 수량 포함)"""
         return self._bal_pair()[0]
+
+    def balance_detail(self):
+        total, avail = self._bal_pair()
+        return {k: (v, avail.get(k, 0.0)) for k, v in total.items()}
 
     # 주문 (마틴봇 시장가)
     def _place(self, market, side, price=None, volume=None):
