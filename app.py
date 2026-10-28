@@ -21,7 +21,7 @@ from grid_bot import GridBot
 from grid_backtest import run_grid_backtest, run_grid_sweep, run_gap_sweep, suggest_range
 from grid_strategy import validate as grid_validate, apply_range_mode
 
-VERSION = "1.10"
+VERSION = "1.9"
 BASE = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, static_folder=os.path.join(BASE, "static"))
 bot = Bot()
@@ -179,51 +179,6 @@ def test_keys():
                         "coins": {x["coin"]: b.get(x["coin"], 0) for x in c["coins"]}})
     except Exception as e:
         return jsonify({"ok": False, "errors": [str(e)], "ip": my_public_ip()})
-
-
-def _account_balance(exch, ak, sk):
-    """저장된 키로 잔고 + 원화 환산 (주문은 하지 않음)"""
-    ex = exchange_class(exch)(ak, sk)
-    b = ex.balances()
-    coins = []
-    for coin, qty in b.items():
-        if coin == "KRW" or qty <= 0:
-            continue
-        try:
-            price = ex.price(f"KRW-{coin}")
-        except Exception:
-            price = None
-        value = qty * price if price else None
-        if value is not None and value < 1:   # 먼지 잔고는 생략
-            continue
-        coins.append({"coin": coin, "qty": qty, "price": price, "value": value})
-    coins.sort(key=lambda x: -(x["value"] or 0))
-    krw = b.get("KRW", 0)
-    return {"krw": krw, "coins": coins, "total": krw + sum(x["value"] or 0 for x in coins)}
-
-
-@app.get("/api/balances")
-def balances():
-    """저장된 설정의 API 키로 거래소 잔고 조회. Martin·Grid 키가 같으면 한 번만 조회"""
-    m, g = bot.cfg, grid.cfg
-    gak, gsk = grid._keys()
-    accts = [("Martin", m["exchange"], m.get("access_key", ""), m.get("secret_key", ""))]
-    if (g["exchange"], gak) != (m["exchange"], m.get("access_key", "")):
-        accts.append(("Grid", g["exchange"], gak, gsk))
-    else:
-        accts[0] = ("Martin · Grid", *accts[0][1:])
-    out = []
-    for name, exch, ak, sk in accts:
-        row = {"bots": name, "exchange": exch}
-        if not ak or not sk:
-            row["error"] = "저장된 API 키가 없습니다"
-        else:
-            try:
-                row.update(_account_balance(exch, ak, sk))
-            except Exception as e:
-                row["error"] = str(e)
-        out.append(row)
-    return jsonify({"ok": True, "accounts": out, "at": time.strftime("%Y-%m-%d %H:%M:%S")})
 
 
 @app.post("/api/backtest")

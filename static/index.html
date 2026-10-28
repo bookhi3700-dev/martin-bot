@@ -226,13 +226,6 @@ nav .grp.h{--c:var(--home)}
   <!-- ================= 대시보드 ================= -->
   <section id="tab-home">
     <div class="grid" id="hTotals"></div>
-    <div class="card" style="margin-top:12px">
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <h3 style="margin:0">거래소 잔고</h3><span class="hint" id="balAt">저장된 API 키로 조회합니다 (주문 안 함)</span>
-        <span class="spacer"></span><button type="button" id="btnBal">잔고 조회</button>
-      </div>
-      <div id="balBody"></div>
-    </div>
     <div class="hcols">
       <div class="card hbot m" id="hMartin"></div>
       <div class="card hbot g" id="hGrid"></div>
@@ -605,23 +598,6 @@ $('#btnTest').onclick = async () => {
   const ipTxt = r.ip ? `  |  이 프로그램의 IP: ${r.ip} (거래소 허용 IP에 이 값을 등록)` : '';
   $('#testRes').textContent = (r.ok ? `성공 — 원화 ${won(r.krw)}, ` + Object.entries(r.coins).map(([k, v]) => `${k} ${v}`).join(', ') : '실패: ' + r.errors.join(' ') + ' — 키 오타, 권한(잔고 조회), 허용 IP를 확인하세요.') + ipTxt;
   if (r.ok) $('#testRes').textContent += '  ※ 확인만 한 것이니 꼭 [설정 저장]을 누르세요.';
-};
-
-// ---------------- 잔고 조회 (대시보드) ----------------
-$('#btnBal').onclick = async () => {
-  $('#btnBal').disabled = true; $('#balAt').textContent = '조회 중…';
-  try {
-    const r = await api('/api/balances');
-    $('#balAt').textContent = `${r.at} 기준 · 저장된 키로 조회`;
-    $('#balBody').innerHTML = r.accounts.map(a => {
-      const head = `<p style="margin:12px 0 6px"><b>${EXN[a.exchange] || esc(a.exchange)}</b> <span class="hint">${esc(a.bots)} 키</span>`
-        + (a.error ? '' : ` · 총 <b>${won(a.total)}</b> <span class="hint">(원화 ${won(a.krw)} + 코인 ${won(a.total - a.krw)})</span>`) + '</p>';
-      if (a.error) return head + `<div class="hint neg">실패: ${esc(a.error)}</div>`;
-      const rows = a.coins.map(c => `<tr><td>${esc(c.coin)}</td><td>${c.qty.toLocaleString('ko-KR', {maximumFractionDigits: 8})}</td><td>${c.price ? num(c.price) : '-'}</td><td>${c.value != null ? won(c.value) : '-'}</td></tr>`).join('');
-      return head + `<div class="tablewrap"><table><thead><tr><th>코인</th><th>보유 수량</th><th>현재가</th><th>평가금액</th></tr></thead><tbody>${rows || '<tr><td colspan="4" class="hint">보유 코인 없음</td></tr>'}</tbody></table></div>`;
-    }).join('');
-  } catch (e) { $('#balAt').textContent = '조회 실패: ' + e.message; }
-  $('#btnBal').disabled = false;
 };
 
 // ---------------- 실행 ----------------
