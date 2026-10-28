@@ -33,7 +33,8 @@ GRID_DEFAULTS = {
 # 공통 설정(거래소·계좌 단위) / 코인별 설정 구분
 GLOBAL_KEYS = ("exchange", "mode", "access_key", "secret_key", "fee_pct", "check_interval_sec")
 GRID_GLOBAL_DEFAULTS = {k: GRID_DEFAULTS[k] for k in GLOBAL_KEYS}
-GRID_COIN_DEFAULTS = {"enabled": True, **{k: v for k, v in GRID_DEFAULTS.items() if k not in GLOBAL_KEYS}}
+# tag: 같은 코인에 그리드를 하나 더 둘 때 구분용 이름표 ("" = 첫 그리드, "2" → BTC-2)
+GRID_COIN_DEFAULTS = {"enabled": True, "tag": "", **{k: v for k, v in GRID_DEFAULTS.items() if k not in GLOBAL_KEYS}}
 
 MAX_GRIDS = 100
 

@@ -394,7 +394,9 @@ def grid_backtest():
         return jsonify({"ok": False, "errors": ["그리드 백테스트가 이미 진행 중입니다."]})
     body = request.get_json(force=True) or {}
     days = int(body.get("days", 180))
-    cfg = grid.coin_cfg((body.get("coin") or grid.cfg["coins"][0]["coin"]).upper())
+    coin = (body.get("coin") or grid.cfg["coins"][0]["coin"]).upper()
+    tag = str(body.get("tag") or "").upper()
+    cfg = grid.coin_cfg(f"{coin}-{tag}" if tag else coin)
     for k in ("lower", "upper", "fee_pct", "gap_pct"):
         if body.get(k) not in (None, ""):
             cfg[k] = float(body[k])

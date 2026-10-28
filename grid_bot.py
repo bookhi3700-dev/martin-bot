@@ -1,6 +1,7 @@
 """그리드 자동매매 실행기 — Martin Bot과 같은 프로그램 안에서 별도 스레드로 동작 (여러 코인)
 
 설정 = 공통(거래소·모드·API 키·수수료·확인 주기) + 코인별(범위·간격·칸 수·금액·손절)
+같은 코인에 그리드를 여러 개 둘 수 있습니다 (tag 로 구분: BTC, BTC-2 …). 각자 자기 칸·주문·보유 수량만 다룹니다.
 코인마다 상태 파일·주문·일시정지·손절이 따로이고, 시작/중지는 함께 합니다.
 
 안전장치
@@ -65,7 +66,14 @@ def normalize_coin(c):
         if k in GRID_COIN_DEFAULTS and v is not None and v != "":
             out[k] = _cast(GRID_COIN_DEFAULTS[k], v)
     out["coin"] = out["coin"].strip().upper()
+    out["tag"] = "".join(ch for ch in out["tag"].upper() if ch.isalnum())[:6]
     return out
+
+
+def slot_id(c):
+    """그리드 하나를 가리키는 이름. 같은 코인에 그리드를 여러 개 둘 때 구분용 (BTC, BTC-2 …).
+    태그가 없는 첫 그리드는 코인 이름 그대로라서 예전 상태 파일·기록이 그대로 이어집니다."""
+    return f"{c['coin']}-{c['tag']}" if c.get("tag") else c["coin"]
 
 
 def load_config():
@@ -105,7 +113,7 @@ def save_config(cfg):
 
 class PaperBook:
     """모의투자용 지정가 거래소: 실제 시세를 받아오고, 가격이 주문가에 닿으면 체결된 것으로 처리.
-    코인마다 주문 장부(books[market])를 따로 두며, 각 장부는 그 코인의 상태 파일에 함께 저장됩니다."""
+    그리드마다 주문 장부(books[그리드 이름])를 따로 두며, 각 장부는 그 그리드의 상태 파일에 함께 저장됩니다."""
 
     def __init__(self, real, fee_pct):
         self.real = real
@@ -161,10 +169,11 @@ class PaperBook:
 
 
 class GridCoin:
-    """코인 하나의 격자 — 상태·주문·체결 처리"""
+    """그리드 하나의 격자 — 상태·주문·체결 처리. sid = 그리드 이름(BTC, BTC-2 …), coin = 매매하는 코인"""
 
-    def __init__(self, bot, coin):
-        self.bot, self.coin = bot, coin
+    def __init__(self, bot, sid):
+        self.bot, self.sid = bot, sid
+        self.coin = sid.split("-")[0]
         self.last_price = None
         self._prev = None
         self._rr = 0
@@ -173,16 +182,20 @@ class GridCoin:
     # ---------- 상태 ----------
     @property
     def cfg(self):
-        return self.bot.coin_cfg(self.coin)
+        return self.bot.coin_cfg(self.sid)
 
     @property
     def key(self):
         g = self.bot.cfg
-        return f"{g['mode']}_{g['exchange']}_{self.coin}"
+        return f"{g['mode']}_{g['exchange']}_{self.sid}"
 
     @property
     def market(self):
         return f"KRW-{self.coin}"
+
+    def book(self, ex):
+        """주문 장부 이름 — 모의투자는 같은 코인 그리드끼리 장부가 섞이지 않게 그리드별로, 실전은 마켓 이름"""
+        return self.sid if isinstance(ex, PaperBook) else self.market
 
     def _path(self):
         return os.path.join(DATA_DIR, f"grid_state_{self.key}.json")
@@ -218,10 +231,10 @@ class GridCoin:
         return [c for c in self.state["cells"] if c["st"] in ("buy", "sell")]
 
     def log(self, msg, notify=False):
-        self.bot.log(f"{self.coin} {msg}", notify=notify)
+        self.bot.log(f"{self.sid} {msg}", notify=notify)
 
     def warn_once(self, key, msg, every=600, notify=False):
-        self.bot.warn_once(f"{self.coin}:{key}", f"{self.coin} {msg}", every=every, notify=notify)
+        self.bot.warn_once(f"{self.sid}:{key}", f"{self.sid} {msg}", every=every, notify=notify)
 
     def log_trade(self, side, c, price, qty, krw, fee, profit=None):
         path = os.path.join(DATA_DIR, f"grid_trades_{self.key}.csv")
@@ -244,7 +257,7 @@ class GridCoin:
             self.warn_once("minfo", f"⚠ 호가 단위 조회 실패({e}) — 저장된 값으로 진행합니다.")
         mi = self.state.get("minfo") or {"tick": 0.0, "qty_step": 1e-8, "min_krw": 5000.0}
         if isinstance(ex, PaperBook):
-            ex.books[self.market] = self.state["paper_orders"]
+            ex.books[self.sid] = self.state["paper_orders"]
         with self.bot.lock:
             levels = build_levels(self.cfg, mi["tick"])
             if not self.state["cells"] or (not self.active_cells() and levels != self.state["levels"]):
@@ -280,7 +293,7 @@ class GridCoin:
         self.last_price = price
         self._prev = price
         if isinstance(ex, PaperBook):
-            ex.observe(self.market, lo, hi)
+            ex.observe(self.sid, lo, hi)
         cfg = self.cfg
         if cfg["stop_loss_enabled"] and cfg["stop_loss_price"] > 0 and price <= cfg["stop_loss_price"]:
             self.stop_loss(ex, price)
@@ -331,8 +344,8 @@ class GridCoin:
     def _release_buy(self, ex, c):
         """현재가에서 멀어진 매수 주문 취소 → 묶인 원화를 풂. 가격이 다시 내려오면 그때 다시 겁니다"""
         try:
-            ex.cancel_order(c["cid"], self.market)
-            o = ex.get_order(c["cid"], self.market)
+            ex.cancel_order(c["cid"], self.book(ex))
+            o = ex.get_order(c["cid"], self.book(ex))
         except OrderNotFound:
             return
         except (ExchangeError, requests.RequestException) as e:
@@ -358,7 +371,7 @@ class GridCoin:
             c.update(st="buy", cid=self._new_cid(), ok=False, oqty=qty, at=now())
             self.save()      # 보내기 전에 ID 저장 → 연결이 끊겨도 다음에 조회 가능
         try:
-            ex.limit_order(self.market, "bid", c["buy"], qty, c["cid"], mi["tick"], mi["qty_step"])
+            ex.limit_order(self.book(ex), "bid", c["buy"], qty, c["cid"], mi["tick"], mi["qty_step"])
         except OrderUnconfirmed as e:
             self.log(f"⚠ {c['i'] + 1}칸 매수 접수 확인 불가({e}) — 다음 확인 때 주문 ID로 다시 조회합니다.")
             return True
@@ -387,7 +400,7 @@ class GridCoin:
             c.update(st="sell", cid=self._new_cid(), ok=False, oqty=qty)
             self.save()
         try:
-            ex.limit_order(self.market, "ask", c["sell"], qty, c["cid"], mi["tick"], mi["qty_step"])
+            ex.limit_order(self.book(ex), "ask", c["sell"], qty, c["cid"], mi["tick"], mi["qty_step"])
         except OrderUnconfirmed as e:
             self.log(f"⚠ {c['i'] + 1}칸 매도 접수 확인 불가({e}) — 다음 확인 때 주문 ID로 다시 조회합니다.")
             return
@@ -403,7 +416,7 @@ class GridCoin:
 
     def _check_cell(self, ex, c):
         try:
-            o = ex.get_order(c["cid"], self.market)
+            o = ex.get_order(c["cid"], self.book(ex))
         except OrderNotFound:
             with self.bot.lock:
                 if not c["ok"]:
@@ -464,14 +477,14 @@ class GridCoin:
         cells = [c for c in self.open_cells() if c is not skip]
         for c in cells:
             try:
-                ex.cancel_order(c["cid"], self.market)
+                ex.cancel_order(c["cid"], self.book(ex))
             except Exception as e:
                 self.log(f"⚠ {c['i'] + 1}칸 주문 취소 실패: {e}")
         if cells and not isinstance(ex, PaperBook):
             time.sleep(1)
         for c in cells:
             try:
-                o = ex.get_order(c["cid"], self.market)
+                o = ex.get_order(c["cid"], self.book(ex))
             except OrderNotFound:
                 with self.bot.lock:
                     if not c["ok"]:
@@ -551,7 +564,7 @@ class GridCoin:
         buy_krw = sum(c.get("oqty", 0) * c["buy"] for c in cells if c["st"] == "buy")
         tick = (st.get("minfo") or {}).get("tick", 0.0)
         return {
-            "coin": self.coin, "enabled": cfg["enabled"], "price": price, "paused": st.get("paused", ""),
+            "sid": self.sid, "coin": self.coin, "tag": cfg.get("tag", ""), "enabled": cfg["enabled"], "price": price, "paused": st.get("paused", ""),
             "max_buy_orders": int(cfg.get("max_buy_orders") or 0),
             "cells": [{k: c.get(k) for k in ("i", "buy", "sell", "st", "qty", "cost", "at")} for c in cells],
             "stats": st["stats"],
@@ -578,12 +591,13 @@ class GridBot:
         self._sync_slots()
 
     # ---------- 도우미 ----------
-    def coin_cfg(self, coin):
-        c = next((c for c in self.cfg["coins"] if c["coin"] == coin), None) or {**GRID_COIN_DEFAULTS, "coin": coin}
+    def coin_cfg(self, sid):
+        c = (next((c for c in self.cfg["coins"] if slot_id(c) == sid), None)
+             or {**GRID_COIN_DEFAULTS, "coin": sid.split("-")[0], "tag": sid.split("-")[1] if "-" in sid else ""})
         return {**{k: self.cfg[k] for k in GRID_GLOBAL_DEFAULTS}, **c}
 
     def _sync_slots(self, reload_all=False):
-        names = [c["coin"] for c in self.cfg["coins"]]
+        names = [slot_id(c) for c in self.cfg["coins"]]
         for n in list(self.slots):
             if n not in names:
                 del self.slots[n]
@@ -594,7 +608,7 @@ class GridBot:
                 self.slots[n].reload()
 
     def enabled_slots(self):
-        return [self.slots[c["coin"]] for c in self.cfg["coins"] if c["enabled"] and c["coin"] in self.slots]
+        return [self.slots[slot_id(c)] for c in self.cfg["coins"] if c["enabled"] and slot_id(c) in self.slots]
 
     def log(self, msg, notify=False):
         line = f"[{now()}] {msg}"
@@ -672,15 +686,15 @@ class GridBot:
                     merged["coins"] = [normalize_coin(c) for c in new["coins"]][:MAX_COINS]
                 except (TypeError, ValueError):
                     return ["코인 설정에 숫자가 아닌 값이 있습니다."]
-            names = [c["coin"] for c in merged["coins"]]
+            names = [slot_id(c) for c in merged["coins"]]
             if not names:
                 return ["코인을 한 개 이상 등록하세요."]
             if len(names) != len(set(names)):
-                return ["Grid에 같은 코인이 두 번 등록되어 있습니다."]
+                return ["Grid 이름이 겹칩니다. 같은 코인 그리드는 이름(BTC, BTC-2 …)이 서로 달라야 합니다."]
 
             identity = any(merged[k] != self.cfg[k] for k in ("exchange", "mode"))
             changed_global = [k for k in GRID_GLOBAL_DEFAULTS if merged[k] != self.cfg[k]]
-            old = {c["coin"]: c for c in self.cfg["coins"]}
+            old = {slot_id(c): c for c in self.cfg["coins"]}
             if self.running or self.stopping:
                 if any(k not in LIVE_EDITABLE_GLOBAL for k in changed_global) or set(names) != set(old):
                     return ["실행 중에는 수수료·확인 주기·손절만 바꿀 수 있습니다. 거래소·모드·코인 목록·범위를 바꾸려면 먼저 Grid를 중지하세요."]
@@ -700,20 +714,21 @@ class GridBot:
                 except Exception:
                     pass
                 apply_range_mode(c, tick)
-                o = old.get(c["coin"])
-                s = self.slots.get(c["coin"])
+                sid = slot_id(c)
+                o = old.get(sid)
+                s = self.slots.get(sid)
                 if o and not identity:
                     ch = [k for k in GRID_COIN_DEFAULTS if c[k] != o[k]]
                     if (self.running or self.stopping) and any(k not in LIVE_EDITABLE_COIN for k in ch):
-                        errs.append(f"{c['coin']}: 실행 중에는 손절만 바꿀 수 있습니다. 범위·칸·금액·켜고 끄기는 Grid를 중지한 뒤 바꾸세요.")
+                        errs.append(f"{sid}: 실행 중에는 손절만 바꿀 수 있습니다. 범위·칸·금액·켜고 끄기는 Grid를 중지한 뒤 바꾸세요.")
                         continue
                     level_ch = [k for k in ch if k in COIN_LEVEL_KEYS]
                     if s and s.active_cells() and level_ch and not extends_only(o, c, level_ch):
-                        errs.append(f"{c['coin']}: 코인을 들고 있거나 주문이 걸린 칸이 있어 범위·칸·금액을 바꿀 수 없습니다. "
+                        errs.append(f"{sid}: 코인을 들고 있거나 주문이 걸린 칸이 있어 범위·칸·금액을 바꿀 수 없습니다. "
                                     "(간격 % 방식에서 하단·간격·칸당 금액을 그대로 두고 칸 수만 늘리는 것은 됩니다.) "
                                     "중지 후 [정리]로 보유분을 매도하거나 기록을 비운 뒤 바꾸세요.")
                         continue
-                errs += [f"{c['coin']}: {e}" for e in validate({**{k: merged[k] for k in GRID_GLOBAL_DEFAULTS}, **c}, tick, min_krw)]
+                errs += [f"{sid}: {e}" for e in validate({**{k: merged[k] for k in GRID_GLOBAL_DEFAULTS}, **c}, tick, min_krw)]
             if merged["mode"] == "live" and not self._keys(merged)[0]:
                 errs.append("실전 모드는 API 키가 필요합니다. Grid용 키를 넣거나, Martin Bot과 같은 거래소라면 Martin Bot 설정의 키를 사용합니다.")
             if errs:
@@ -751,7 +766,7 @@ class GridBot:
             errs = []
             for s in slots:
                 if not s.state.get("paused"):
-                    errs += [f"{s.coin}: {e}" for e in validate(s.cfg, (s.state.get("minfo") or {}).get("tick", 0.0))]
+                    errs += [f"{s.sid}: {e}" for e in validate(s.cfg, (s.state.get("minfo") or {}).get("tick", 0.0))]
             if all(s.state.get("paused") for s in slots):
                 errs.append("켜진 코인이 모두 일시정지 상태입니다. Grid 탭에서 [기록 비우기]로 정리한 뒤 시작하세요.")
             if self.cfg["mode"] == "live" and not self._keys()[0]:
@@ -764,7 +779,7 @@ class GridBot:
             self.thread.start()
         if not resume:
             mode = "실전" if self.cfg["mode"] == "live" else "모의투자"
-            desc = ", ".join(f"{s.coin} {s.cfg['lower']:,.0f}~{s.cfg['upper']:,.0f}·{s.cfg['grids']}칸" for s in slots
+            desc = ", ".join(f"{s.sid} {s.cfg['lower']:,.0f}~{s.cfg['upper']:,.0f}·{s.cfg['grids']}칸" for s in slots
                              if not s.state.get("paused"))
             self.log(f"▶ Grid 시작 — {mode} / {self.cfg['exchange']} / {desc}", notify=True)
             for w in self.check_conflict():
@@ -791,8 +806,8 @@ class GridBot:
                 try:
                     active = [s for s in self.enabled_slots() if not s.state.get("paused")]
                     for s in active:
-                        if s.coin not in minfo:
-                            minfo[s.coin] = s.prepare(ex)
+                        if s.sid not in minfo:
+                            minfo[s.sid] = s.prepare(ex)
                     if active:
                         prices = ex.prices([s.market for s in active])
                         for s in active:
@@ -802,7 +817,7 @@ class GridBot:
                             if p is None:
                                 continue
                             try:
-                                s.tick(ex, p, minfo[s.coin])
+                                s.tick(ex, p, minfo[s.sid])
                             except (ExchangeError, requests.RequestException) as e:
                                 s.warn_once("tick", f"⚠ 처리 중 오류: {e}", every=300, notify=True)
                             except Exception as e:
@@ -836,7 +851,7 @@ class GridBot:
                                               " — 주문 취소 완료. 보유 코인은 그대로입니다."), notify=True)
 
     def clear(self, coin, action):
-        """중지 상태에서 코인 하나 정리. sell = 보유분 시장가 매도 후 격자 비우기 / forget = 기록만 비움(거래소 잔고는 그대로)"""
+        """중지 상태에서 그리드 하나 정리 (coin = 그리드 이름 BTC, BTC-2 …). sell = 보유분 시장가 매도 후 격자 비우기 / forget = 기록만 비움(거래소 잔고는 그대로)"""
         if self.running or self.stopping:
             return ["먼저 Grid를 중지하세요."]
         s = self.slots.get((coin or "").upper())
@@ -859,7 +874,7 @@ class GridBot:
     # ---------- 현황 ----------
     def status(self):
         with self.lock:
-            coins = [self.slots[c["coin"]].status() for c in self.cfg["coins"] if c["coin"] in self.slots]
+            coins = [self.slots[slot_id(c)].status() for c in self.cfg["coins"] if slot_id(c) in self.slots]
             tot = {"realized": sum(c["stats"]["realized"] for c in coins),
                    "round_trips": sum(c["stats"]["round_trips"] for c in coins),
                    "fees": sum(c["stats"]["fees"] for c in coins),
