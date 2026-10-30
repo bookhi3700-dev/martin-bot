@@ -21,7 +21,7 @@ from grid_bot import GridBot
 from grid_backtest import run_grid_backtest, run_grid_sweep, run_gap_sweep, suggest_range
 from grid_strategy import validate as grid_validate, apply_range_mode
 
-VERSION = "1.9.2"
+VERSION = "1.9.3"
 BASE = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, static_folder=os.path.join(BASE, "static"))
 bot = Bot()
