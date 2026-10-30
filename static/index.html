@@ -253,7 +253,7 @@ nav .grp.h{--c:var(--home)}
     <div class="grid" id="totals" style="margin-top:12px"></div>
     <h2>코인별 현황</h2>
     <div class="coins" id="coinCards"></div>
-    <h2>완료 사이클 (최근 30개)</h2>
+    <h2>완료 사이클 (최근 15개)</h2>
     <div class="card tablewrap"><table id="mHist"><thead><tr><th>종료</th><th>코인</th><th>사유</th><th>단계</th><th>매수 평단</th><th>매도가</th><th>투입</th><th>손익</th></tr></thead><tbody></tbody></table></div>
     <h2>로그</h2>
     <div class="card logs" id="logs"></div>
@@ -374,7 +374,7 @@ nav .grp.h{--c:var(--home)}
     <p class="hint" style="margin:-4px 0 10px">위가 높은 가격입니다. <b>매수 대기</b> = 그 칸 사는 가격에 지정가 매수가 걸린 상태 · <b>매도 대기</b> = 산 코인을 파는 가격에 지정가 매도로 걸어둔 상태</p>
     <div id="gCoins"></div>
 
-    <h2>완료된 매매 (최근 30개)</h2>
+    <h2>완료된 매매 (최근 15개)</h2>
     <div class="card tablewrap"><table id="gHist"><thead><tr><th>시각</th><th>코인</th><th>칸</th><th>매수가</th><th>매도가</th><th>투입</th><th>수익</th></tr></thead><tbody></tbody></table></div>
 
     <h2>Grid 로그</h2>
@@ -725,7 +725,7 @@ async function refresh() {
     if (!confirm('거래소 앱에서 체결 내역을 확인하셨나요? 재개하면 다시 자동매매합니다.')) return;
     showErr($('#globalErr'), (await api('/api/resume-coin', {coin: b.dataset.resume})).errors); refresh();
   });
-  const hist = s.coins.flatMap(c => c.stats.history.map(h => ({...h, coin: c.coin}))).sort((a, b) => String(b.ended_at).localeCompare(String(a.ended_at))).slice(0, 30);
+  const hist = s.coins.flatMap(c => c.stats.history.map(h => ({...h, coin: c.coin}))).sort((a, b) => String(b.ended_at).localeCompare(String(a.ended_at))).slice(0, 15);
   H('#mHist tbody').innerHTML = hist.map(h => `<tr><td>${esc(h.ended_at).slice(5, 16)}</td><td>${esc(h.coin)}</td><td>${esc(h.reason)}</td><td>${h.steps}단계</td>
     <td>${h.avg_price ? num(h.avg_price) : '-'}</td><td>${h.sell_price ? num(h.sell_price) : '-'}</td><td>${won(h.cost)}</td>
     <td class="${cls(h.profit)}">${signed(h.profit)} (${h.profit_pct}%)</td></tr>`).join('') || '<tr><td colspan="8" class="hint">아직 없음</td></tr>';
@@ -1208,7 +1208,7 @@ async function gRefresh() {
       : `${coin} Grid 기록(칸·주문)만 비웁니다. 거래소 잔고와 미체결 주문은 그대로입니다. 거래소 앱에서 직접 정리했을 때만 쓰세요. 계속할까요?`)) return;
     const r = await api('/api/grid/clear', {coin, action: b.dataset.gclear}); showErr($('#gErr'), r.errors); gRefresh();
   });
-  const hist = s.coins.flatMap(c => c.stats.history.map(h => ({...h, coin: c.sid}))).sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 30);
+  const hist = s.coins.flatMap(c => c.stats.history.map(h => ({...h, coin: c.sid}))).sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 15);
   H('#gHist tbody').innerHTML = hist.map(h => `<tr><td>${esc(h.at).slice(5, 16)}</td><td>${esc(h.coin)}</td><td>${esc(h.cell)}</td><td>${num(h.buy)}</td><td>${num(h.sell)}</td><td>${won(h.cost)}</td><td class="${cls(h.profit)}">${signed(h.profit)}</td></tr>`).join('')
     || '<tr><td colspan="7" class="hint">아직 없음</td></tr>';
   H('#gLogs').textContent = s.logs.join('\n') || '아직 없음';
