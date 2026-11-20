@@ -24,7 +24,8 @@ import requests
 
 from exchanges import (exchange_class, ExchangeError, OrderUnconfirmed, OrderNotFound, Paper, floor_step)
 from grid_strategy import (GRID_GLOBAL_DEFAULTS, GRID_COIN_DEFAULTS, build_levels, new_cells, buy_window,
-                           can_place_buy, validate, summary, conflict_with_martin, apply_range_mode)
+                           can_place_buy, validate, summary, conflict_with_martin, apply_range_mode,
+                           extension_plan, extend_levels, round_tick)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
@@ -35,15 +36,9 @@ SECRET_KEYS = ("access_key", "secret_key")
 COIN_LEVEL_KEYS = ("lower", "upper", "grids", "spacing", "krw_per_grid", "range_mode", "gap_pct")
 LIVE_EDITABLE_GLOBAL = ("check_interval_sec", "fee_pct")
 LIVE_EDITABLE_COIN = ("stop_loss_enabled", "stop_loss_price", "max_buy_orders")
+EXTEND_KEYS = ("lower", "upper", "grids")   # 칸 추가(위·아래)일 때 바뀌는 값 — 실행 중에도 허용
 MAX_PLACE_PER_TICK = 8
 MAX_COINS = 10
-
-
-def extends_only(old, new, changed):
-    """간격 % 방식에서 하단·간격·칸당 금액은 그대로, 칸 수만 늘린 변경인지 (상단은 자동 계산이라 같이 바뀜).
-    이 경우 기존 칸 가격이 그대로라서 들고 있는 칸을 건드리지 않고 위쪽에 칸만 덧붙일 수 있습니다."""
-    return (old.get("range_mode") == new.get("range_mode") == "gap" and set(changed) <= {"grids", "upper"}
-            and int(new["grids"]) > int(old["grids"]))
 
 
 def now():
@@ -177,6 +172,7 @@ class GridCoin:
         self.last_price = None
         self._prev = None
         self._rr = 0
+        self.reprep = False      # 설정이 바뀌어 다음 확인 때 격자를 다시 맞춰야 함 (칸 추가 등)
         self.state = self._load()
 
     # ---------- 상태 ----------
@@ -265,26 +261,42 @@ class GridCoin:
                 self.state["cells"] = new_cells(levels)
                 self.save()
                 self.log(f"격자 {len(levels) - 1}칸 생성: {levels[0]:,.0f} ~ {levels[-1]:,.0f} (호가 단위 {mi['tick']:g})")
-            elif self._extendable(levels):
-                cur = self.state["levels"]
-                n_old = len(cur) - 1
-                ext = cur + levels[len(cur):]
-                self.state["levels"] = ext
-                self.state["cells"] += new_cells(ext)[n_old:]
-                self.save()
-                self.log(f"격자 {n_old}칸 → {len(ext) - 1}칸으로 늘림: 위쪽 {cur[-1]:,.0f} ~ {ext[-1]:,.0f} 추가 "
-                         f"(기존 칸·보유분은 그대로)", notify=True)
+            elif levels != self.state["levels"]:
+                self._extend(mi["tick"])
         return mi
 
-    def _extendable(self, levels):
-        """새 격자가 지금 격자를 그대로 두고 위로 칸만 더한 모양인지 (간격 % 방식, 하단 같음, 칸 수 늘어남)"""
-        cur = self.state["levels"]
-        if self.cfg.get("range_mode") != "gap" or len(cur) < 2 or len(levels) <= len(cur):
+    def _extend(self, tick):
+        """설정의 칸 수·하단이 지금 격자보다 위·아래로 넓어졌으면, 기존 칸·주문은 그대로 두고 칸만 덧붙임.
+        실행 중에도 다음 확인 때 바로 반영됩니다."""
+        cur, cfg = self.state["levels"], self.cfg
+        if cfg.get("range_mode") == "gap" and int(cfg["grids"]) == len(cur) - 1 and cfg["lower"] > 0 \
+                and abs(cur[0] / cfg["lower"] - 1) < cfg["gap_pct"] / 100 / 4:
+            return False     # 같은 격자 (호가 반올림 차이뿐)
+        old = {**cfg, "lower": cur[0], "grids": len(cur) - 1}
+        plan = extension_plan(old, cfg)
+        if not isinstance(plan, tuple):
+            self.warn_once("noext", "⚠ 설정한 범위가 지금 격자와 맞지 않아 기존 격자로 계속합니다. "
+                                    "범위를 바꾸려면 중지 후 [정리]하세요.", every=3600)
             return False
-        if levels[0] != cur[0] or levels[len(cur)] <= cur[-1]:
+        kd, ku = plan
+        ext = extend_levels(cur, kd, ku, cfg["gap_pct"], tick)
+        if not ext:
+            self.warn_once("noext2", "⚠ 칸이 너무 촘촘해 추가하지 못했습니다 (호가 단위). 간격을 확인하세요.", every=3600)
             return False
-        # 호가 반올림 차이 정도만 허용 — 간격이 바뀌었으면 기존 칸 위치가 크게 달라짐
-        return abs(levels[len(cur) - 1] / cur[-1] - 1) < self.cfg["gap_pct"] / 100 / 10
+        cells = new_cells(ext)
+        for c in self.state["cells"]:
+            c["i"] += kd
+        self.state["cells"] = cells[:kd] + self.state["cells"] + cells[kd + len(cur) - 1:]
+        self.state["levels"] = ext
+        self.save()
+        parts = []
+        if kd:
+            parts.append(f"아래로 {kd}칸 ({ext[0]:,.0f} ~ {cur[0]:,.0f})")
+        if ku:
+            parts.append(f"위로 {ku}칸 ({cur[-1]:,.0f} ~ {ext[-1]:,.0f})")
+        self.log(f"격자 {len(cur) - 1}칸 → {len(ext) - 1}칸: " + ", ".join(parts) + " 추가 (기존 칸·주문·보유분은 그대로)",
+                 notify=True)
+        return True
 
     # ---------- 한 번의 확인 ----------
     def tick(self, ex, price, mi):
@@ -719,13 +731,26 @@ class GridBot:
                 s = self.slots.get(sid)
                 if o and not identity:
                     ch = [k for k in GRID_COIN_DEFAULTS if c[k] != o[k]]
-                    if (self.running or self.stopping) and any(k not in LIVE_EDITABLE_COIN for k in ch):
-                        errs.append(f"{sid}: 실행 중에는 손절만 바꿀 수 있습니다. 범위·칸·금액·켜고 끄기는 Grid를 중지한 뒤 바꾸세요.")
-                        continue
                     level_ch = [k for k in ch if k in COIN_LEVEL_KEYS]
-                    if s and s.active_cells() and level_ch and not extends_only(o, c, level_ch):
-                        errs.append(f"{sid}: 코인을 들고 있거나 주문이 걸린 칸이 있어 범위·칸·금액을 바꿀 수 없습니다. "
-                                    "(간격 % 방식에서 하단·간격·칸당 금액을 그대로 두고 칸 수만 늘리는 것은 됩니다.) "
+                    plan = extension_plan(o, c) if level_ch and set(level_ch) <= set(EXTEND_KEYS) else None
+                    if isinstance(plan, str):
+                        errs.append(f"{sid}: {plan}")
+                        continue
+                    if isinstance(plan, tuple):
+                        # 하단을 기존 칸 간격에 정확히 맞춤 (입력값 반올림 차이 제거)
+                        c["lower"] = round_tick(o["lower"] / (1 + c["gap_pct"] / 100) ** plan[0], tick)
+                        apply_range_mode(c, tick)
+                        extend_ok = True
+                    else:
+                        extend_ok = False
+                    live_ok = set(EXTEND_KEYS) | set(LIVE_EDITABLE_COIN) if extend_ok else set(LIVE_EDITABLE_COIN)
+                    if (self.running or self.stopping) and any(k not in live_ok for k in ch):
+                        errs.append(f"{sid}: 실행 중에는 손절·미리 걸어둘 매수 수·칸 추가(위·아래)만 바꿀 수 있습니다. "
+                                    "간격·칸당 금액·켜고 끄기, 칸 줄이기는 Grid를 중지한 뒤 바꾸세요.")
+                        continue
+                    if s and s.active_cells() and level_ch and not extend_ok:
+                        errs.append(f"{sid}: 코인을 들고 있거나 주문이 걸린 칸이 있어 범위·간격·금액을 바꿀 수 없습니다. "
+                                    "(간격 % 방식에서 [아래로·위로 칸 추가]는 됩니다.) "
                                     "중지 후 [정리]로 보유분을 매도하거나 기록을 비운 뒤 바꾸세요.")
                         continue
                 errs += [f"{sid}: {e}" for e in validate({**{k: merged[k] for k in GRID_GLOBAL_DEFAULTS}, **c}, tick, min_krw)]
@@ -733,9 +758,14 @@ class GridBot:
                 errs.append("실전 모드는 API 키가 필요합니다. Grid용 키를 넣거나, Martin Bot과 같은 거래소라면 Martin Bot 설정의 키를 사용합니다.")
             if errs:
                 return errs
+            changed_sids = [slot_id(c) for c in merged["coins"]
+                            if slot_id(c) in old and any(c[k] != old[slot_id(c)][k] for k in COIN_LEVEL_KEYS)]
             self.cfg = merged
             save_config(self.cfg)
             self._sync_slots(reload_all=identity)
+            for sid in changed_sids:
+                if sid in self.slots:
+                    self.slots[sid].reprep = True   # 실행 중이면 다음 확인 때 칸 추가 반영
             self.log("Grid 설정이 저장되었습니다.")
             return []
 
@@ -806,7 +836,8 @@ class GridBot:
                 try:
                     active = [s for s in self.enabled_slots() if not s.state.get("paused")]
                     for s in active:
-                        if s.sid not in minfo:
+                        if s.sid not in minfo or s.reprep:
+                            s.reprep = False
                             minfo[s.sid] = s.prepare(ex)
                     if active:
                         prices = ex.prices([s.market for s in active])
