@@ -25,7 +25,7 @@ import requests
 from exchanges import (exchange_class, ExchangeError, OrderUnconfirmed, OrderNotFound, Paper, floor_step)
 from grid_strategy import (GRID_GLOBAL_DEFAULTS, GRID_COIN_DEFAULTS, build_levels, new_cells, buy_window,
                            can_place_buy, validate, summary, conflict_with_martin, apply_range_mode,
-                           extension_plan, extend_levels, round_tick)
+                           extension_plan, resize_levels, removed_range, round_tick)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
@@ -254,6 +254,7 @@ class GridCoin:
         mi = self.state.get("minfo") or {"tick": 0.0, "qty_step": 1e-8, "min_krw": 5000.0}
         if isinstance(ex, PaperBook):
             ex.books[self.sid] = self.state["paper_orders"]
+        resize = False
         with self.bot.lock:
             levels = build_levels(self.cfg, mi["tick"])
             if not self.state["cells"] or (not self.active_cells() and levels != self.state["levels"]):
@@ -262,41 +263,81 @@ class GridCoin:
                 self.save()
                 self.log(f"격자 {len(levels) - 1}칸 생성: {levels[0]:,.0f} ~ {levels[-1]:,.0f} (호가 단위 {mi['tick']:g})")
             elif levels != self.state["levels"]:
-                self._extend(mi["tick"])
+                resize = True
+        if resize:
+            self._extend(ex, mi["tick"])
         return mi
 
-    def _extend(self, tick):
-        """설정의 칸 수·하단이 지금 격자보다 위·아래로 넓어졌으면, 기존 칸·주문은 그대로 두고 칸만 덧붙임.
-        실행 중에도 다음 확인 때 바로 반영됩니다."""
-        cur, cfg = self.state["levels"], self.cfg
-        if cfg.get("range_mode") == "gap" and int(cfg["grids"]) == len(cur) - 1 and cfg["lower"] > 0 \
-                and abs(cur[0] / cfg["lower"] - 1) < cfg["gap_pct"] / 100 / 4:
-            return False     # 같은 격자 (호가 반올림 차이뿐)
-        old = {**cfg, "lower": cur[0], "grids": len(cur) - 1}
-        plan = extension_plan(old, cfg)
-        if not isinstance(plan, tuple):
-            self.warn_once("noext", "⚠ 설정한 범위가 지금 격자와 맞지 않아 기존 격자로 계속합니다. "
-                                    "범위를 바꾸려면 중지 후 [정리]하세요.", every=3600)
-            return False
-        kd, ku = plan
-        ext = extend_levels(cur, kd, ku, cfg["gap_pct"], tick)
-        if not ext:
-            self.warn_once("noext2", "⚠ 칸이 너무 촘촘해 추가하지 못했습니다 (호가 단위). 간격을 확인하세요.", every=3600)
-            return False
-        cells = new_cells(ext)
-        for c in self.state["cells"]:
-            c["i"] += kd
-        self.state["cells"] = cells[:kd] + self.state["cells"] + cells[kd + len(cur) - 1:]
-        self.state["levels"] = ext
-        self.save()
+    def _extend(self, ex, tick):
+        """설정의 칸 수·하단이 지금 격자와 위·아래로 달라졌으면, 남는 칸·주문·보유분은 그대로 두고
+        맨 아래·맨 위 칸만 붙이거나 뗍니다. 떼는 칸의 매수 대기 주문은 취소합니다. 실행 중에도 바로 반영됩니다."""
+        with self.bot.lock:
+            cur, cfg = list(self.state["levels"]), self.cfg
+            if cfg.get("range_mode") == "gap" and int(cfg["grids"]) == len(cur) - 1 and cfg["lower"] > 0 \
+                    and abs(cur[0] / cfg["lower"] - 1) < cfg["gap_pct"] / 100 / 4:
+                return False     # 같은 격자 (호가 반올림 차이뿐)
+            old = {**cfg, "lower": cur[0], "grids": len(cur) - 1}
+            plan = extension_plan(old, cfg)
+            if not isinstance(plan, tuple):
+                self.warn_once("noext", "⚠ 설정한 범위가 지금 격자와 맞지 않아 기존 격자로 계속합니다. "
+                                        "범위를 바꾸려면 중지 후 [정리]하세요.", every=3600)
+                return False
+            kd, ku = plan
+            ext = resize_levels(cur, kd, ku, cfg["gap_pct"], tick)
+            if not ext:
+                self.warn_once("noext2", "⚠ 칸이 너무 촘촘해 칸을 바꾸지 못했습니다 (호가 단위). 간격을 확인하세요.", every=3600)
+                return False
+            n = len(cur) - 1
+            removed = [self.state["cells"][i] for i in removed_range(n, kd, ku)]
+            if any(self._holding(c) for c in removed):
+                self._revert_cfg("빼려는 칸에 코인을 들고 있어")
+                return False
+        n_cancel = len([c for c in removed if c["st"] == "buy"])
+        if n_cancel:
+            self.cancel_all(ex, cells=[c for c in removed if c["st"] == "buy"])
+        with self.bot.lock:
+            if any(self._holding(c) for c in removed):
+                self._revert_cfg("빼려던 칸의 매수가 취소 직전에 체결돼")
+                return False
+            if any(c["st"] != "idle" for c in removed):
+                self.reprep = True     # 취소 확인이 아직 안 됨 → 다음 확인 때 다시
+                return False
+            lo_rm, hi_rm = max(0, -kd), max(0, -ku)
+            keep = self.state["cells"][lo_rm: n - hi_rm]
+            for c in keep:
+                c["i"] += kd
+            fresh = new_cells(ext)
+            add_lo = max(0, kd)
+            self.state["cells"] = fresh[:add_lo] + keep + fresh[add_lo + len(keep):]
+            self.state["levels"] = ext
+            self.save()
         parts = []
-        if kd:
-            parts.append(f"아래로 {kd}칸 ({ext[0]:,.0f} ~ {cur[0]:,.0f})")
-        if ku:
-            parts.append(f"위로 {ku}칸 ({cur[-1]:,.0f} ~ {ext[-1]:,.0f})")
-        self.log(f"격자 {len(cur) - 1}칸 → {len(ext) - 1}칸: " + ", ".join(parts) + " 추가 (기존 칸·주문·보유분은 그대로)",
+        if kd > 0:
+            parts.append(f"아래로 {kd}칸 추가 ({ext[0]:,.0f} ~ {cur[0]:,.0f})")
+        elif kd < 0:
+            parts.append(f"아래 {-kd}칸 제거 ({cur[0]:,.0f} ~ {ext[0]:,.0f})")
+        if ku > 0:
+            parts.append(f"위로 {ku}칸 추가 ({cur[-1]:,.0f} ~ {ext[-1]:,.0f})")
+        elif ku < 0:
+            parts.append(f"위 {-ku}칸 제거 ({ext[-1]:,.0f} ~ {cur[-1]:,.0f})")
+        tail = f", 매수 대기 주문 {n_cancel}개 취소" if n_cancel else ""
+        self.log(f"격자 {n}칸 → {len(ext) - 1}칸: " + ", ".join(parts) + tail + " (남은 칸·주문·보유분은 그대로)",
                  notify=True)
         return True
+
+    @staticmethod
+    def _holding(c):
+        return c["st"] in ("hold", "sell") or c.get("qty", 0) > 0
+
+    def _revert_cfg(self, why):
+        """칸 빼기를 못 하게 됐을 때 설정을 지금 격자로 되돌림"""
+        cur = self.state["levels"]
+        for c in self.bot.cfg["coins"]:
+            if slot_id(c) == self.sid:
+                c["lower"], c["upper"], c["grids"] = cur[0], cur[-1], len(cur) - 1
+        save_config(self.bot.cfg)
+        self.log(f"⚠ {why} 칸 빼기를 취소했습니다. 설정을 지금 격자({len(cur) - 1}칸, "
+                 f"{cur[0]:,.0f} ~ {cur[-1]:,.0f})로 되돌렸습니다.", notify=True)
 
     # ---------- 한 번의 확인 ----------
     def tick(self, ex, price, mi):
@@ -485,8 +526,8 @@ class GridCoin:
                 c.update(st="hold", cid="", ok=False, qty=c["qty"] - qty, cost=c["cost"] - cost_part)
                 self.log(f"🔴 {c['i'] + 1}칸 일부 매도 {qty:.8f} — 수익 {profit:+,.0f}원, 남은 수량은 다시 매도 주문")
 
-    def cancel_all(self, ex, skip=None):
-        cells = [c for c in self.open_cells() if c is not skip]
+    def cancel_all(self, ex, skip=None, cells=None):
+        cells = [c for c in (cells if cells is not None else self.open_cells()) if c is not skip]
         for c in cells:
             try:
                 ex.cancel_order(c["cid"], self.book(ex))
@@ -749,20 +790,29 @@ class GridBot:
                         errs.append(f"{sid}: {plan}")
                         continue
                     if isinstance(plan, tuple):
+                        kd, ku = plan
+                        cells = s.state["cells"] if s else []
+                        if s and (kd < 0 or ku < 0) and len(cells) == int(o["grids"]):
+                            gone = [cells[i] for i in removed_range(len(cells), kd, ku)]
+                            held = [x["i"] + 1 for x in gone if GridCoin._holding(x)]
+                            if held:
+                                errs.append(f"{sid}: 빼려는 칸 중 {', '.join(map(str, held))}번 칸이 코인을 들고 있어 뺄 수 없습니다. "
+                                            "그 칸이 매도된 뒤에 빼세요.")
+                                continue
                         # 하단을 기존 칸 간격에 정확히 맞춤 (입력값 반올림 차이 제거)
-                        c["lower"] = round_tick(o["lower"] / (1 + c["gap_pct"] / 100) ** plan[0], tick)
+                        c["lower"] = round_tick(o["lower"] / (1 + c["gap_pct"] / 100) ** kd, tick)
                         apply_range_mode(c, tick)
                         extend_ok = True
                     else:
                         extend_ok = False
                     live_ok = set(EXTEND_KEYS) | set(LIVE_EDITABLE_COIN) if extend_ok else set(LIVE_EDITABLE_COIN)
                     if (self.running or self.stopping) and any(k not in live_ok for k in ch):
-                        errs.append(f"{sid}: 실행 중에는 손절·미리 걸어둘 매수 수·칸 추가(위·아래)만 바꿀 수 있습니다. "
-                                    "간격·칸당 금액·켜고 끄기, 칸 줄이기는 Grid를 중지한 뒤 바꾸세요.")
+                        errs.append(f"{sid}: 실행 중에는 손절·미리 걸어둘 매수 수·칸 추가/빼기(위·아래)만 바꿀 수 있습니다. "
+                                    "간격·칸당 금액·켜고 끄기는 Grid를 중지한 뒤 바꾸세요.")
                         continue
                     if s and s.active_cells() and level_ch and not extend_ok:
                         errs.append(f"{sid}: 코인을 들고 있거나 주문이 걸린 칸이 있어 범위·간격·금액을 바꿀 수 없습니다. "
-                                    "(간격 % 방식에서 [아래로·위로 칸 추가]는 됩니다.) "
+                                    "(간격 % 방식에서 위·아래 칸 추가/빼기는 됩니다.) "
                                     "중지 후 [정리]로 보유분을 매도하거나 기록을 비운 뒤 바꾸세요.")
                         continue
                 errs += [f"{sid}: {e}" for e in validate({**{k: merged[k] for k in GRID_GLOBAL_DEFAULTS}, **c}, tick, min_krw)]
@@ -782,7 +832,7 @@ class GridBot:
                     self.log(f"{name} 그리드를 삭제했습니다.")
             for sid in changed_sids:
                 if sid in self.slots:
-                    self.slots[sid].reprep = True   # 실행 중이면 다음 확인 때 칸 추가 반영
+                    self.slots[sid].reprep = True   # 실행 중이면 다음 확인 때 칸 추가/빼기 반영
             self.log("Grid 설정이 저장되었습니다.")
             return []
 

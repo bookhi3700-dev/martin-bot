@@ -143,35 +143,45 @@ def conflict_with_martin(grid_cfg, martin_cfg, from_martin=False):
 
 
 def extension_plan(old, new):
-    """기존 격자를 그대로 두고 아래·위로 칸만 붙이는 변경인지 판단.
-    간격 % 방식 + 간격·칸당 금액 같음 + 하단은 같거나 기존 칸 간격의 정수배만큼 낮음 + 칸 수 늘어남.
-    맞으면 (아래로 추가 칸 수, 위로 추가 칸 수), 아니면 None, 하단이 칸 간격에 안 맞으면 오류 문구"""
+    """기존 격자는 그대로 두고 맨 아래·맨 위 칸만 붙이거나 떼는 변경인지 판단.
+    간격 % 방식 + 간격·칸당 금액 같음 + 하단이 기존 칸 간격의 정수배만큼만 움직임.
+    맞으면 (아래쪽 칸 변화, 위쪽 칸 변화) — 양수는 추가, 음수는 빼기.
+    아니면 None, 하단이 칸 간격에 안 맞으면 오류 문구"""
     if old.get("range_mode") != "gap" or new.get("range_mode") != "gap":
         return None
     if abs(float(old["gap_pct"]) - float(new["gap_pct"])) > 1e-9 or int(old["krw_per_grid"]) != int(new["krw_per_grid"]):
         return None
     lo_old, lo_new = float(old["lower"]), float(new["lower"])
-    if lo_old <= 0 or lo_new <= 0 or lo_new > lo_old * (1 + 1e-9):
+    if lo_old <= 0 or lo_new <= 0:
         return None
     g = 1 + float(new["gap_pct"]) / 100
     kd_f = math.log(lo_old / lo_new) / math.log(g)
     kd = int(round(kd_f))
     if abs(kd_f - kd) > 0.25:
-        return (f"하단 가격은 기존 칸 간격({new['gap_pct']}%)에 맞춰 내려야 기존 칸을 그대로 둘 수 있습니다. "
-                f"[아래로 칸 추가] 버튼을 쓰세요.")
-    ku = int(new["grids"]) - int(old["grids"]) - kd
-    if ku < 0 or kd + ku <= 0:
+        return (f"하단 가격은 기존 칸 간격({new['gap_pct']}%)에 맞춰 옮겨야 기존 칸을 그대로 둘 수 있습니다. "
+                f"[아래로 추가]·[아래 칸 빼기] 버튼을 쓰세요.")
+    n_old = int(old["grids"])
+    ku = int(new["grids"]) - n_old - kd
+    if kd == 0 and ku == 0:
         return None
+    if max(0, -kd) + max(0, -ku) >= n_old:
+        return None          # 기존 칸이 하나도 안 남음 → 새 격자
     return kd, ku
 
 
-def extend_levels(cur, kd, ku, gap_pct, tick=0.0):
-    """기존 가격 목록(cur) 아래로 kd칸, 위로 ku칸을 같은 간격으로 덧붙인 목록. 기존 가격은 그대로"""
+def removed_range(n, kd, ku):
+    """칸 n개짜리 격자에서 (kd, ku) 변경으로 빠지는 칸 번호(0부터)"""
+    return list(range(max(0, -kd))) + list(range(n - max(0, -ku), n))
+
+
+def resize_levels(cur, kd, ku, gap_pct, tick=0.0):
+    """기존 가격 목록(cur)에서 아래·위 칸을 떼거나(음수) 같은 간격으로 덧붙인(양수) 목록. 남는 가격은 그대로"""
     g = 1 + gap_pct / 100
-    below = [round_tick(cur[0] / g ** j, tick) for j in range(kd, 0, -1)]
-    above = [round_tick(cur[-1] * g ** j, tick) for j in range(1, ku + 1)]
-    out = below + list(cur) + above
-    if any(b <= a for a, b in zip(out, out[1:])):
+    base = list(cur[max(0, -kd): len(cur) - max(0, -ku)])
+    below = [round_tick(base[0] / g ** j, tick) for j in range(kd, 0, -1)]
+    above = [round_tick(base[-1] * g ** j, tick) for j in range(1, ku + 1)]
+    out = below + base + above
+    if len(out) < 2 or any(b <= a for a, b in zip(out, out[1:])):
         return None
     return out
 
