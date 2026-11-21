@@ -976,11 +976,13 @@ function gEditor(c, open) {
       <div class="row" data-mode="gap"><label>칸 수 정하기</label><select data-x="countby"><option value="count">칸 수를 직접 입력</option><option value="budget">총 예산으로 계산 (예산 ÷ 칸당 금액)</option></select></div>
       <div class="row" data-countby="budget"><label>총 예산 (원)</label><input data-x="budget" type="number" min="0" step="100000" value="${(+c.grids || 0) * (+c.krw_per_grid || 0) || ''}"><div class="hint" data-x="budgethint"></div></div>
       <div class="row"><label>칸 수</label><input data-k="grids" type="number" min="2" max="100" step="1" value="${v('grids')}"></div>
-      <div class="row" data-mode="gap"><label>칸 추가</label><div class="addrow">
-        <input data-x="addn" type="number" min="1" max="50" step="1" value="1" aria-label="추가할 칸 수">
+      <div class="row" data-mode="gap"><label>칸 추가·빼기</label><div class="addrow">
+        <input data-x="addn" type="number" min="1" max="50" step="1" value="1" aria-label="추가하거나 뺄 칸 수">
         <button type="button" class="small" data-x="adddown">아래로 추가 ▼</button>
         <button type="button" class="small" data-x="addup">위로 추가 ▲</button>
-        <div class="hint" data-x="addhint">기존 칸·걸린 주문·보유분은 그대로 두고 같은 간격으로 칸만 붙입니다. <b>실행 중에도</b> [Grid 설정 저장]하면 다음 확인 때 바로 반영돼요.</div></div></div>
+        <button type="button" class="small" data-x="rmdown">아래 칸 빼기</button>
+        <button type="button" class="small" data-x="rmup">위 칸 빼기</button>
+        <div class="hint" data-x="addhint">나머지 칸·걸린 주문·보유분은 그대로 두고 맨 아래·맨 위 칸만 붙이거나 뗍니다. 빼는 칸에 걸린 매수 주문은 자동 취소되고, 코인을 들고 있는 칸은 뺄 수 없어요. <b>실행 중에도</b> [Grid 설정 저장]하면 다음 확인 때 바로 반영돼요.</div></div></div>
       <div class="row"><label>상단 가격 (원)</label><input data-k="upper" type="number" value="${+c.upper || ''}"><div class="hint" data-x="upperhint"></div></div>
       <div class="row" data-mode="range"><label>간격 방식</label>${sel('spacing', [['geom', '등비 — 칸마다 같은 % (추천)'], ['arith', '등간격 — 칸마다 같은 원']])}</div>
       <div class="row"><span></span><div><select data-x="sugdays" class="auto"><option value="14">최근 2주</option><option value="30" selected>최근 30일</option><option value="60">최근 60일</option><option value="90">최근 90일</option></select>
@@ -992,11 +994,21 @@ function gEditor(c, open) {
       <div class="row"><span></span><div class="note" data-x="preview"></div></div>
       <details><summary>칸별 사는 가격 · 파는 가격 미리보기</summary>
         <div class="tablewrap"><table><thead><tr><th>칸</th><th>사는 가격</th><th>파는 가격</th><th>칸 수익 (수수료 후)</th></tr></thead><tbody data-x="ladder"></tbody></table></div></details>
-      <p style="margin:10px 0 0"><button type="button" class="danger small" data-x="del">이 코인 삭제</button></p>
+      <p style="margin:10px 0 0"><button type="button" class="danger small" data-x="del">이 그리드 삭제</button>
+        <span class="hint">코인을 들고 있지 않으면 실행 중에도 삭제됩니다 (걸린 매수 주문은 자동 취소)</span></p>
     </div>`;
   const X = n => d.querySelector(`[data-x="${n}"]`);
   d.querySelectorAll('[data-k],[data-x="countby"],[data-x="budget"]').forEach(el => el.addEventListener('input', () => { gSyncEd(d); if (el.dataset.k === 'range_mode') gSyncCand(); }));
-  X('del').onclick = () => { if (confirm(`${gSid(c)} 을(를) Grid 목록에서 삭제할까요? (저장해야 반영)`)) { d.remove(); gBtCoins(); } };
+  X('del').onclick = () => {
+    const sid = gSid(c), st = gstat && gstat.coins ? gstat.coins.find(x => (x.sid || x.coin) === sid) : null;
+    const held = st ? st.cells.filter(x => x.st === 'hold' || x.st === 'sell').length : 0;
+    const buys = st ? st.cells.filter(x => x.st === 'buy').length : 0;
+    if (held) {
+      alert(`${sid} 은(는) 코인을 들고 있는 칸이 ${held}개 있어 지금은 삭제할 수 없습니다.\n\n그 칸이 팔린 뒤 삭제하거나, Grid를 중지하고 Grid 현황의 ${sid} 카드에서 [보유분 시장가 매도 후 비우기]로 정리한 뒤 삭제하세요.`);
+      return;
+    }
+    if (confirm(`${sid} 그리드를 삭제할까요?${buys ? `\n걸려 있는 매수 주문 ${buys}개는 자동으로 취소됩니다.` : ''}\n다른 그리드는 그대로 계속 실행됩니다.\n\n[Grid 설정 저장]을 눌러야 반영됩니다.`)) { d.remove(); gBtCoins(); }
+  };
   X('suggest').onclick = () => gSuggest(d);
   const addCells = dir => {
     const K = k => d.querySelector(`[data-k="${k}"]`);
@@ -1013,6 +1025,32 @@ function gEditor(c, open) {
   };
   X('adddown').onclick = () => addCells(-1);
   X('addup').onclick = () => addCells(1);
+  const rmCells = dir => {
+    const K = k => d.querySelector(`[data-k="${k}"]`);
+    const n = Math.max(1, Math.round(+X('addn').value || 1)), g = 1 + (+K('gap_pct').value || 0) / 100;
+    const lo = +K('lower').value, cur = Math.round(+K('grids').value || 0), krw = +K('krw_per_grid').value || 0;
+    if (!(lo > 0 && g > 1 && cur >= 1)) { X('addhint').textContent = '하단 가격·간격·칸 수를 먼저 정하세요.'; return; }
+    if (cur - n < 2) { X('addhint').textContent = `최소 2칸은 남아야 합니다 (지금 ${cur}칸). 그리드를 통째로 없애려면 [이 그리드 삭제]를 쓰세요.`; return; }
+    const tick = gTicks[d.dataset.coin] || 0;
+    const nlo = dir < 0 ? rTick(lo * g ** n, tick) : lo;
+    const nhi = dir < 0 ? +K('upper').value : rTick(lo * g ** (cur - n), tick);
+    const sid = gSid(c), st = gstat && gstat.coins ? gstat.coins.find(x => (x.sid || x.coin) === sid) : null;
+    const gone = st ? st.cells.filter(x => dir < 0 ? x.buy < nlo * (1 - 1e-6) : x.sell > nhi * (1 + 1e-6)) : [];
+    const held = gone.filter(x => x.st === 'hold' || x.st === 'sell');
+    if (held.length) {
+      X('addhint').innerHTML = `<span class="neg">${dir < 0 ? '아래' : '위'} ${n}칸 중 ${held.map(x => x.i + 1).join(', ')}번 칸이 코인을 들고 있어 뺄 수 없습니다.</span> 그 칸이 매도된 뒤에 빼세요.`;
+      return;
+    }
+    const buys = gone.filter(x => x.st === 'buy').length;
+    X('countby').value = 'count';
+    if (dir < 0) K('lower').value = nlo;
+    K('grids').value = cur - n;
+    gSyncEd(d);
+    X('addhint').innerHTML = `${dir < 0 ? `아래 ${n}칸 빼기 → 하단 <b>${num(+K('lower').value)}</b>원` : `위 ${n}칸 빼기 → 상단 <b>${num(+K('upper').value)}</b>원`} · 예산 −${won(krw * n)}` +
+      `${buys ? ` · 걸린 매수 주문 ${buys}개 자동 취소` : ''}. <b>[Grid 설정 저장]</b>을 눌러야 반영됩니다.`;
+  };
+  X('rmdown').onclick = () => rmCells(-1);
+  X('rmup').onclick = () => rmCells(1);
   gSyncEd(d);
   return d;
 }
