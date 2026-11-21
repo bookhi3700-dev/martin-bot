@@ -600,6 +600,7 @@ class GridBot:
         self.krw_short_until = 0
         self._warned = {}
         self.slots = {}
+        self.retiring = {}   # 실행 중에 삭제한 그리드: 다음 확인 때 걸린 매수 주문을 취소하고 정리 {sid: (slot, 설정)}
         self._sync_slots()
 
     # ---------- 도우미 ----------
@@ -708,15 +709,26 @@ class GridBot:
             changed_global = [k for k in GRID_GLOBAL_DEFAULTS if merged[k] != self.cfg[k]]
             old = {slot_id(c): c for c in self.cfg["coins"]}
             if self.running or self.stopping:
-                if any(k not in LIVE_EDITABLE_GLOBAL for k in changed_global) or set(names) != set(old):
-                    return ["실행 중에는 수수료·확인 주기·손절만 바꿀 수 있습니다. 거래소·모드·코인 목록·범위를 바꾸려면 먼저 Grid를 중지하세요."]
+                if any(k not in LIVE_EDITABLE_GLOBAL for k in changed_global):
+                    return ["실행 중에는 수수료·확인 주기만 바꿀 수 있습니다. 거래소·모드를 바꾸려면 먼저 Grid를 중지하세요."]
             if identity and any(s.active_cells() for s in self.slots.values()):
                 return ["코인을 들고 있거나 주문이 걸린 칸이 있어 거래소·모드를 바꿀 수 없습니다. 중지 후 [정리]하고 바꾸세요."]
             errs = []
+            retire = []
             for name in old:
                 s = self.slots.get(name)
-                if name not in names and s and s.active_cells() and not identity:
-                    errs.append(f"{name} 은(는) 들고 있는 코인이나 걸린 주문이 있어 삭제할 수 없습니다. 끄기만 하거나 [정리] 후 삭제하세요.")
+                if name in names or not s or identity:
+                    continue
+                held = [c for c in s.state["cells"] if c["st"] in ("hold", "sell") or c.get("qty", 0) > 0]
+                if held:
+                    errs.append(f"{name} 은(는) 코인을 들고 있는 칸이 {len(held)}개 있어 삭제할 수 없습니다. "
+                                "그 칸이 팔린 뒤 삭제하거나, Grid를 중지하고 [보유분 시장가 매도 후 비우기]로 정리한 뒤 삭제하세요.")
+                elif s.open_cells():
+                    if self.running:
+                        retire.append(name)          # 매수 대기 주문만 있음 → 실행 중이면 다음 확인 때 취소하고 삭제
+                    else:
+                        errs.append(f"{name} 은(는) 취소 확인이 안 된 주문이 있어 삭제할 수 없습니다. "
+                                    "거래소 앱에서 미체결 주문을 확인한 뒤 [기록만 비우기] 후 삭제하세요.")
             # 코인별 계산·검증
             for c in merged["coins"]:
                 tick, min_krw = 0.0, 5000.0
@@ -760,9 +772,14 @@ class GridBot:
                 return errs
             changed_sids = [slot_id(c) for c in merged["coins"]
                             if slot_id(c) in old and any(c[k] != old[slot_id(c)][k] for k in COIN_LEVEL_KEYS)]
+            for name in retire:
+                self.retiring[name] = (self.slots[name], old[name])
             self.cfg = merged
             save_config(self.cfg)
             self._sync_slots(reload_all=identity)
+            for name in old:
+                if name not in names and name not in retire:
+                    self.log(f"{name} 그리드를 삭제했습니다.")
             for sid in changed_sids:
                 if sid in self.slots:
                     self.slots[sid].reprep = True   # 실행 중이면 다음 확인 때 칸 추가 반영
@@ -827,12 +844,39 @@ class GridBot:
         self.log("■ Grid 중지 요청 — 걸어둔 주문을 취소합니다…", notify=True)
         return []
 
+    def _retire(self, ex):
+        """실행 중에 삭제한 그리드의 매수 대기 주문을 취소하고 목록에서 뺌.
+        취소 직전에 매수가 체결돼 코인이 생기면 삭제를 취소하고 그리드를 되살립니다."""
+        for sid, (s, ccfg) in list(self.retiring.items()):
+            n = len(s.open_cells())
+            try:
+                s.cancel_all(ex)
+            except Exception as e:
+                s.warn_once("retire", f"⚠ 삭제 중 주문 취소 실패: {e} — 다음 확인 때 다시 시도합니다.", every=300)
+                continue
+            held = [c for c in s.state["cells"] if c["st"] in ("hold", "sell") or c.get("qty", 0) > 0]
+            if held:
+                with self.lock:
+                    if sid not in {slot_id(c) for c in self.cfg["coins"]}:
+                        self.cfg["coins"].append(ccfg)
+                        save_config(self.cfg)
+                        self.slots[sid] = s
+                    del self.retiring[sid]
+                s.log("⚠ 삭제 중에 매수가 체결돼 코인을 들고 있게 되어 삭제를 취소하고 그리드를 되살렸습니다.", notify=True)
+                continue
+            if s.open_cells():
+                continue    # 취소 확인이 아직 안 됨 → 다음 확인 때 다시
+            with self.lock:
+                del self.retiring[sid]
+            self.log(f"{sid} 그리드를 삭제했습니다 — 걸려 있던 매수 주문 {n}개 취소 (다른 그리드는 계속 실행 중)", notify=True)
+
     def _loop(self):
         ex = None
         minfo = {}
         try:
             ex = self.make_exchange()
             while self.running:
+                self._retire(ex)
                 try:
                     active = [s for s in self.enabled_slots() if not s.state.get("paused")]
                     for s in active:
@@ -870,6 +914,7 @@ class GridBot:
                     time.sleep(0.1)
         finally:
             if ex is not None and not self.running:
+                self._retire(ex)
                 for s in list(self.slots.values()):
                     try:
                         s.cancel_all(ex)

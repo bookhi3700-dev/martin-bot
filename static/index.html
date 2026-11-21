@@ -992,11 +992,21 @@ function gEditor(c, open) {
       <div class="row"><span></span><div class="note" data-x="preview"></div></div>
       <details><summary>칸별 사는 가격 · 파는 가격 미리보기</summary>
         <div class="tablewrap"><table><thead><tr><th>칸</th><th>사는 가격</th><th>파는 가격</th><th>칸 수익 (수수료 후)</th></tr></thead><tbody data-x="ladder"></tbody></table></div></details>
-      <p style="margin:10px 0 0"><button type="button" class="danger small" data-x="del">이 코인 삭제</button></p>
+      <p style="margin:10px 0 0"><button type="button" class="danger small" data-x="del">이 그리드 삭제</button>
+        <span class="hint">코인을 들고 있지 않으면 실행 중에도 삭제됩니다 (걸린 매수 주문은 자동 취소)</span></p>
     </div>`;
   const X = n => d.querySelector(`[data-x="${n}"]`);
   d.querySelectorAll('[data-k],[data-x="countby"],[data-x="budget"]').forEach(el => el.addEventListener('input', () => { gSyncEd(d); if (el.dataset.k === 'range_mode') gSyncCand(); }));
-  X('del').onclick = () => { if (confirm(`${gSid(c)} 을(를) Grid 목록에서 삭제할까요? (저장해야 반영)`)) { d.remove(); gBtCoins(); } };
+  X('del').onclick = () => {
+    const sid = gSid(c), st = gstat && gstat.coins ? gstat.coins.find(x => (x.sid || x.coin) === sid) : null;
+    const held = st ? st.cells.filter(x => x.st === 'hold' || x.st === 'sell').length : 0;
+    const buys = st ? st.cells.filter(x => x.st === 'buy').length : 0;
+    if (held) {
+      alert(`${sid} 은(는) 코인을 들고 있는 칸이 ${held}개 있어 지금은 삭제할 수 없습니다.\n\n그 칸이 팔린 뒤 삭제하거나, Grid를 중지하고 Grid 현황의 ${sid} 카드에서 [보유분 시장가 매도 후 비우기]로 정리한 뒤 삭제하세요.`);
+      return;
+    }
+    if (confirm(`${sid} 그리드를 삭제할까요?${buys ? `\n걸려 있는 매수 주문 ${buys}개는 자동으로 취소됩니다.` : ''}\n다른 그리드는 그대로 계속 실행됩니다.\n\n[Grid 설정 저장]을 눌러야 반영됩니다.`)) { d.remove(); gBtCoins(); }
+  };
   X('suggest').onclick = () => gSuggest(d);
   const addCells = dir => {
     const K = k => d.querySelector(`[data-k="${k}"]`);
