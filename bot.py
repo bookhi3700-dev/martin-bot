@@ -225,6 +225,9 @@ class Bot:
                 if s and s.pos.step and not identity:
                     return [f"{gone} 은(는) 아직 {s.pos.step}단계 포지션(투입 {s.pos.cost:,.0f}원)을 들고 있어 삭제할 수 없습니다. "
                             f"'이 코인 매매'는 켜둔 채 '자동 재시작'만 끄고 저장하면 익절 후 멈춥니다. 그때 삭제하세요."]
+            for gone in old_names - new_names:
+                if gone in self.slots:
+                    self._archive(self.slots[gone])
             self.cfg = merged
             save_config(self.cfg)
             self._sync_slots(reload_all=identity)
@@ -431,6 +434,37 @@ class Bot:
         self.log(f"{coin} 일시정지를 해제했습니다.")
         return []
 
+    # ---------- 삭제한 코인의 누적 손익 ----------
+    def _archive_path(self):
+        g = self.cfg
+        return os.path.join(DATA_DIR, f"archive_{g['mode']}_{g['exchange']}.json")
+
+    def archived(self):
+        """삭제한 코인들이 남긴 누적 실현손익·사이클 수 (거래소·모드별)"""
+        a = {"realized": 0, "cycles": 0}
+        try:
+            with open(self._archive_path(), encoding="utf-8") as f:
+                a.update(json.load(f))
+        except (OSError, ValueError):
+            pass
+        return a
+
+    def _archive(self, slot):
+        """코인을 삭제할 때 그 코인의 누적 손익을 보관함으로 옮김 → 전체 누적에는 계속 포함.
+        같은 코인을 다시 추가하면 0부터 새로 셉니다 (두 번 더해지지 않게)."""
+        st = slot.stats
+        if not (st.get("realized") or st.get("cycles")):
+            return
+        a = self.archived()
+        a["realized"] += st.get("realized", 0)
+        a["cycles"] += st.get("cycles", 0)
+        tmp = self._archive_path() + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(a, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, self._archive_path())
+        slot.stats = {"cycles": 0, "realized": 0, "history": []}
+        slot.save()
+
     # ---------- 현황 ----------
     def status(self):
         with self.lock:
@@ -459,11 +493,12 @@ class Bot:
                 })
             tot_cost = sum(x["position"]["cost"] for x in coins)
             tot_pnl = sum(x["position"]["pnl"] or 0 for x in coins)
+            arc = self.archived()    # 삭제한 코인의 누적 손익도 전체 누적에 포함
             return {
                 "running": self.running, "mode": self.cfg["mode"], "exchange": self.cfg["exchange"],
                 "total": {"cost": tot_cost, "pnl": tot_pnl,
-                          "realized": sum(x["stats"]["realized"] for x in coins),
-                          "cycles": sum(x["stats"]["cycles"] for x in coins),
+                          "realized": sum(x["stats"]["realized"] for x in coins) + arc["realized"],
+                          "cycles": sum(x["stats"]["cycles"] for x in coins) + arc["cycles"],
                           "budget": self.cfg["total_budget"], "limit_action": self.cfg["total_limit_action"],
                           "max_need": sum(x["max_budget"] for x in coins if x["enabled"])},
                 "coins": coins,

@@ -824,6 +824,9 @@ class GridBot:
                             if slot_id(c) in old and any(c[k] != old[slot_id(c)][k] for k in COIN_LEVEL_KEYS)]
             for name in retire:
                 self.retiring[name] = (self.slots[name], old[name])
+            for name in old:
+                if name not in names and name not in retire and name in self.slots:
+                    self._archive(self.slots[name])
             self.cfg = merged
             save_config(self.cfg)
             self._sync_slots(reload_all=identity)
@@ -917,8 +920,45 @@ class GridBot:
             if s.open_cells():
                 continue    # 취소 확인이 아직 안 됨 → 다음 확인 때 다시
             with self.lock:
+                self._archive(s)
                 del self.retiring[sid]
             self.log(f"{sid} 그리드를 삭제했습니다 — 걸려 있던 매수 주문 {n}개 취소 (다른 그리드는 계속 실행 중)", notify=True)
+
+    # ---------- 삭제한 그리드의 누적 손익 ----------
+    def _archive_path(self):
+        g = self.cfg
+        return os.path.join(DATA_DIR, f"grid_archive_{g['mode']}_{g['exchange']}.json")
+
+    def archived(self):
+        """삭제한 그리드들이 남긴 누적 실현손익·왕복·수수료 (거래소·모드별)"""
+        a = {"realized": 0.0, "round_trips": 0, "fees": 0.0}
+        try:
+            with open(self._archive_path(), encoding="utf-8") as f:
+                a.update(json.load(f))
+        except (OSError, ValueError):
+            pass
+        return a
+
+    def _archive(self, s):
+        """그리드를 삭제할 때 그 그리드의 누적 손익을 보관함으로 옮김 → 전체 누적에는 계속 포함.
+        같은 이름으로 다시 추가하면 0부터 새로 셉니다 (두 번 더해지지 않게)."""
+        st = s.state["stats"]
+        if not (st.get("realized") or st.get("round_trips") or st.get("fees")):
+            return
+        a = self.archived()
+        a["realized"] += st.get("realized", 0)
+        a["round_trips"] += st.get("round_trips", 0)
+        a["fees"] += st.get("fees", 0)
+        tmp = self._archive_path() + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(a, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, self._archive_path())
+        s.state["stats"] = self._empty_stats()
+        s.save()
+
+    @staticmethod
+    def _empty_stats():
+        return GridCoin._empty()["stats"]
 
     def _loop(self):
         ex = None
@@ -1001,9 +1041,11 @@ class GridBot:
     def status(self):
         with self.lock:
             coins = [self.slots[slot_id(c)].status() for c in self.cfg["coins"] if slot_id(c) in self.slots]
-            tot = {"realized": sum(c["stats"]["realized"] for c in coins),
-                   "round_trips": sum(c["stats"]["round_trips"] for c in coins),
-                   "fees": sum(c["stats"]["fees"] for c in coins),
+            # 전체 누적 = 지금 그리드 + 삭제 중인 그리드 + 삭제한 그리드(보관함)
+            past = [s.state["stats"] for s, _ in self.retiring.values()] + [self.archived()]
+            tot = {"realized": sum(c["stats"]["realized"] for c in coins) + sum(x["realized"] for x in past),
+                   "round_trips": sum(c["stats"]["round_trips"] for c in coins) + sum(x["round_trips"] for x in past),
+                   "fees": sum(c["stats"]["fees"] for c in coins) + sum(x["fees"] for x in past),
                    "unrealized": sum(c["total"]["unrealized"] or 0 for c in coins),
                    "hold_cost": sum(c["total"]["hold_cost"] for c in coins),
                    "buy_orders_krw": sum(c["total"]["buy_orders_krw"] for c in coins),
