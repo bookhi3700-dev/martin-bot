@@ -3,9 +3,13 @@
 data/auth.json 에 비밀번호가 설정되어 있으면(set_password.py) 로그인해야 접속할 수 있습니다.
 서버에 올릴 때는 반드시 비밀번호를 설정하세요.
 """
+import getpass
 import json
 import os
 import secrets
+import shutil
+import subprocess
+import sys
 import threading
 import time
 import webbrowser
@@ -21,7 +25,7 @@ from grid_bot import GridBot
 from grid_backtest import run_grid_backtest, run_grid_sweep, run_gap_sweep, suggest_range
 from grid_strategy import validate as grid_validate, apply_range_mode
 
-VERSION = "1.9.7"
+VERSION = "1.9.8"
 BASE = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, static_folder=os.path.join(BASE, "static"))
 bot = Bot()
@@ -123,7 +127,114 @@ def index():
 
 @app.get("/api/status")
 def status():
-    return jsonify({**bot.status(), "auth": bool(password_hash()), "version": VERSION})
+    return jsonify({**bot.status(), "auth": bool(password_hash()), "version": VERSION,
+                    "commit": COMMIT, "can_update": can_update()})
+
+
+# ---------------- 대시보드에서 서버 업데이트 ----------------
+# 서버(systemd로 실행)에서만 동작: deploy/update.sh 를 봇 서비스 바깥의 별도 작업으로 실행해서
+# 봇이 재시작되는 동안에도 업데이트가 끝까지 진행되게 합니다. PC(START.bat)에서는 버튼이 안 보입니다.
+UPDATE_SH = os.path.join(BASE, "deploy", "update.sh")
+UPDATE_LOG = os.path.join(DATA, "update.log")
+update_lock = threading.Lock()
+update_cache = {"at": 0, "data": None}
+
+
+def _git(*args, timeout=20):
+    r = subprocess.run(["git", *args], cwd=BASE, capture_output=True, text=True, timeout=timeout)
+    if r.returncode != 0:
+        raise RuntimeError((r.stderr or r.stdout).strip() or f"git {args[0]} 실패")
+    return r.stdout.strip()
+
+
+def _commit():
+    try:
+        return _git("rev-parse", "--short", "HEAD", timeout=5)
+    except Exception:
+        return ""
+
+
+COMMIT = _commit()
+
+
+def can_update():
+    return (sys.platform.startswith("linux") and bool(os.environ.get("INVOCATION_ID"))
+            and os.path.exists(UPDATE_SH) and os.path.isdir(os.path.join(BASE, ".git"))
+            and bool(shutil.which("systemd-run")) and bool(shutil.which("sudo")))
+
+
+def check_update(force=False):
+    """원격(GitHub)에 새 커밋이 있는지 확인. 1분 동안은 결과를 재사용."""
+    if not force and update_cache["data"] and time.time() - update_cache["at"] < 60:
+        return update_cache["data"]
+    _git("fetch", "--quiet")
+    behind = int(_git("rev-list", "--count", "--no-merges", "HEAD..@{u}") or 0)
+    news = _git("log", "--no-merges", "--format=%s", "-n", "8", "HEAD..@{u}").splitlines() if behind else []
+    data = {"behind": behind, "news": news, "current": COMMIT}
+    update_cache.update(at=time.time(), data=data)
+    return data
+
+
+def update_result():
+    """지난 업데이트 기록(data/update.log)을 읽어 진행 중/성공/실패를 돌려줌."""
+    if not os.path.exists(UPDATE_LOG):
+        return {"state": "none", "log": ""}
+    with open(UPDATE_LOG, encoding="utf-8", errors="replace") as f:
+        log = f.read()[-4000:]
+    if "EXIT " not in log:
+        state = "running"
+    else:
+        state = "ok" if "EXIT 0" in log and "UPDATE OK" in log else "failed"
+    return {"state": state, "log": log, "commit": COMMIT, "version": VERSION}
+
+
+@app.get("/api/update/check")
+def update_check():
+    if not can_update():
+        return jsonify({"ok": False, "errors": ["서버에서만 쓸 수 있습니다."]})
+    try:
+        return jsonify({"ok": True, **check_update(force=request.args.get("force") == "1")})
+    except Exception as e:
+        return jsonify({"ok": False, "errors": [f"새 버전 확인 실패: {e}"]})
+
+
+@app.get("/api/update/result")
+def update_result_api():
+    return jsonify(update_result())
+
+
+@app.post("/api/update")
+def update_run():
+    if not can_update():
+        return jsonify({"ok": False, "errors": ["서버에서만 쓸 수 있습니다. PC에서는 새 버전을 받아 START.bat을 다시 실행하세요."]})
+    if not update_lock.acquire(blocking=False):
+        return jsonify({"ok": False, "errors": ["업데이트가 이미 진행 중입니다."]})
+    try:
+        if update_result()["state"] == "running" and time.time() - os.path.getmtime(UPDATE_LOG) < 300:
+            return jsonify({"ok": False, "errors": ["업데이트가 이미 진행 중입니다."]})
+        try:
+            info = check_update(force=True)
+        except Exception as e:
+            return jsonify({"ok": False, "errors": [f"새 버전 확인 실패: {e}"]})
+        if not info["behind"]:
+            return jsonify({"ok": False, "uptodate": True, "errors": ["이미 최신 버전입니다."]})
+        with open(UPDATE_LOG, "w", encoding="utf-8") as f:
+            f.write(f"> {time.strftime('%Y-%m-%d %H:%M:%S')} 대시보드에서 업데이트 시작 (현재 {COMMIT})\n")
+        user = getpass.getuser()
+        cmd = ["sudo", "-n", "systemd-run", "--quiet", "--collect",
+               f"--unit=martin-bot-update-{int(time.time())}", f"--uid={user}",
+               f"--working-directory={BASE}", f"--setenv=HOME={os.path.expanduser('~')}",
+               "/bin/bash", "-c", 'bash deploy/update.sh >> "$1" 2>&1; echo "EXIT $?" >> "$1"', "update", UPDATE_LOG]
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+        if r.returncode != 0:
+            msg = (r.stderr or r.stdout).strip()
+            with open(UPDATE_LOG, "a", encoding="utf-8") as f:
+                f.write(f"시작 실패: {msg}\nEXIT 1\n")
+            return jsonify({"ok": False, "errors": [f"업데이트를 시작하지 못했습니다: {msg or '권한 없음'}",
+                                                    "SSH로 bash ~/martin-bot/deploy/update.sh 를 실행해 주세요."]})
+        return jsonify({"ok": True, "behind": info["behind"]})
+    finally:
+        update_lock.release()
 
 
 @app.get("/api/config")

@@ -53,13 +53,15 @@ bash martin-bot/deploy/install.sh
 
 | 하고 싶은 것 | 명령어 |
 |---|---|
-| 새 버전으로 업데이트 | `bash ~/martin-bot/deploy/update.sh` |
+| 새 버전으로 업데이트 | 대시보드 맨 위 버전 옆 **[업데이트]** 버튼 (또는 SSH에서 `bash ~/martin-bot/deploy/update.sh`) |
 | 실시간 로그 보기 (나가기 Ctrl+C) | `sudo journalctl -u martin-bot -f` |
 | 봇 다시 시작 | `sudo systemctl restart martin-bot` |
 | 대시보드 비밀번호 변경 | `cd ~/martin-bot && .venv/bin/python set_password.py` 후 `sudo systemctl restart martin-bot` |
 
 - 서버가 재부팅돼도 봇은 자동으로 켜지고, **실행 중이었다면 자동매매도 이어서** 진행합니다.
 - 설정·기록은 업데이트해도 유지됩니다.
+- **[업데이트] 버튼**: 새 버전이 있으면 `업데이트 (3)`처럼 개수가 표시됩니다. 누르면 바뀐 내용을 보여주고, 확인하면 서버가 새 버전을 받아 몇 초 동안 다시 켜집니다. 끝나면 화면이 자동으로 새로고침됩니다. 결과 기록은 `data/update.log`.
+  (버튼은 서버에서만 보입니다. 이 버튼이 생기기 전 버전이라면 첫 번째 업데이트는 SSH로 한 번 해 주세요.)
 - 서버를 없애려면: 라이트세일에서 인스턴스 **삭제** + **고정 IP도 삭제** (연결 안 된 고정 IP는 요금이 나옵니다) + 거래소에서 API 키 삭제.
 
 ## 보안
