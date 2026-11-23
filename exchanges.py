@@ -543,6 +543,49 @@ class Coinone(_JwtExchange):
             return by_order
         raise OrderUnconfirmed("코인원 주문 체결을 확인하지 못했습니다. 거래소 앱에서 직접 확인해 주세요.")
 
+    # ---------- 원화 입출금 내역 (입금 대비 손익용) ----------
+    def krw_flows(self, start_ms=None):
+        """완료된 원화 입금·출금 합계. API가 한 번에 90일까지만 주므로 오늘부터 90일씩 거슬러 올라갑니다.
+        start_ms 를 안 주면 코인원 서비스 시작(2014년)까지 확인합니다."""
+        DAY = 86400000
+        now = int(time.time() * 1000)
+        start = start_ms or int(datetime(2014, 1, 1, tzinfo=timezone.utc).timestamp() * 1000)
+        dep = wd = fee = 0.0
+        n_dep = n_wd = 0
+        first = last = None
+        seen = set()
+        to_ts = now
+        while to_ts > start:
+            from_ts = max(start, to_ts - 90 * DAY + 1)
+            to_id = None
+            while True:
+                body = {"size": 100, "from_ts": from_ts, "to_ts": to_ts}
+                if to_id:
+                    body["to_id"] = to_id
+                txs = self._private("/v2.1/transaction/krw/history", body).get("transactions") or []
+                new = [t for t in txs if t.get("id") not in seen]
+                for t in new:
+                    seen.add(t.get("id"))
+                    st, amt = str(t.get("status", "")), float(t.get("amount") or 0)
+                    if st == "DEPOSIT_COMPLETE":
+                        dep += amt
+                        n_dep += 1
+                    elif st == "WITHDRAWAL_COMPLETE":
+                        wd += amt
+                        fee += float(t.get("fee") or 0)
+                        n_wd += 1
+                    else:
+                        continue
+                    ts = int(t.get("created_at") or 0)
+                    first = ts if first is None else min(first, ts)
+                    last = ts if last is None else max(last, ts)
+                if len(txs) < 100 or not new:
+                    break
+                to_id = txs[-1].get("id")
+            to_ts = from_ts - 1
+        return {"deposit": dep, "withdraw": wd, "withdraw_fee": fee, "n_deposit": n_dep, "n_withdraw": n_wd,
+                "first_ms": first, "last_ms": last}
+
     # ---------- 지정가 (그리드용) ----------
     def market_info(self, market):
         q, t = self._split(market)

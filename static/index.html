@@ -1478,7 +1478,7 @@ async function loadBalances() {
       return head + `<div class="mini">
           <div><span class="k">총 평가금액</span><span class="v">${won(a.total)}</span></div>
           <div><span class="k">원화</span><span class="v">${won(a.krw)}${a.krw_avail < a.krw ? ` <small>주문 가능 ${won(a.krw_avail)}</small>` : ''}</span></div>
-        </div>`;
+        </div>` + (a.exchange === 'coinone' ? `<p style="margin:8px 0 0"><button class="small" id="btnPnl">입금 대비 손익 확인</button> <span class="hint">코인원 원화 입출금 내역 전체를 불러옵니다 (10초쯤 걸림)</span></p><div id="hPnl"></div>` : '');
     }).join('');
   } catch (e) {
     $('#balAt').textContent = '';
@@ -1486,6 +1486,27 @@ async function loadBalances() {
   } finally { btn.disabled = false; }
 }
 $('#btnBal').onclick = loadBalances;
+document.addEventListener('click', async e => {
+  if (e.target.id !== 'btnPnl') return;
+  const btn = e.target, box = $('#hPnl');
+  btn.disabled = true; box.innerHTML = '<p class="hint">입출금 내역 조회 중…</p>';
+  try {
+    const r = await api('/api/coinone-pnl');
+    if (!r.ok) throw new Error(r.errors.join(' '));
+    const d = ms => ms ? new Date(ms).toLocaleDateString('ko-KR') : '-';
+    const cls = r.diff >= 0 ? 'pos' : 'neg', sign = r.diff >= 0 ? '+' : '';
+    box.innerHTML = `<div class="mini" style="margin-top:8px">
+        <div><span class="k">총 입금</span><span class="v">${won(r.deposit)} <small>${r.n_deposit}건</small></span></div>
+        <div><span class="k">총 출금</span><span class="v">${won(r.withdraw)} <small>${r.n_withdraw}건</small></span></div>
+        <div><span class="k">순입금 (입금 - 출금)</span><span class="v">${won(r.net)}</span></div>
+        <div><span class="k">현재 총 평가금액</span><span class="v">${won(r.total)}</span></div>
+        <div><span class="k">차액 (손익)</span><span class="v ${cls}">${sign}${won(r.diff)}${r.pct != null ? ` <small>${sign}${r.pct.toFixed(2)}%</small>` : ''}</span></div>
+      </div>
+      <p class="hint" style="margin:6px 0 0">입출금 기간 ${d(r.first_ms)} ~ ${d(r.last_ms)}. 원화 입출금만 셉니다 (코인을 다른 거래소에서 옮겨 온 경우는 빠짐).${r.unpriced.length ? ' 시세 없는 코인 제외: ' + r.unpriced.join(', ') : ''}</p>`;
+  } catch (err) {
+    box.innerHTML = `<p class="neg">조회 실패: ${esc(err.message)}</p>`;
+  } finally { btn.disabled = false; }
+});
 loadBalances();
 
 gLoadConfig().then(gRefresh);

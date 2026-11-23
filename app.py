@@ -226,6 +226,34 @@ def balances():
     return jsonify({"ok": True, "accounts": accounts})
 
 
+@app.get("/api/coinone-pnl")
+def coinone_pnl():
+    """코인원: 지금까지 넣은 원화(입금 - 출금) 대비 현재 총 평가금액. 주문은 하지 않음"""
+    for c in (bot.cfg, grid.cfg):
+        if c.get("exchange") == "coinone":
+            keys = (bot.cfg["access_key"], bot.cfg["secret_key"]) if c is bot.cfg else grid._keys()
+            if keys[0] and keys[1]:
+                break
+    else:
+        return jsonify({"ok": False, "errors": ["코인원 API 키가 등록된 봇이 없습니다."]})
+    ex = exchange_class("coinone")(*keys)
+    try:
+        f = ex.krw_flows()
+        det = ex.balance_detail()
+        krw = det.pop("KRW", (0.0, 0.0))[0]
+        held = {c: q[0] for c, q in det.items() if q[0] > 0}
+        px = ex.prices([f"KRW-{c}" for c in held]) if held else {}
+    except Exception as e:
+        return jsonify({"ok": False, "errors": [str(e)]})
+    coin_val = sum(q * px[f"KRW-{c}"] for c, q in held.items() if f"KRW-{c}" in px)
+    total = krw + coin_val
+    net = f["deposit"] - f["withdraw"]
+    diff = total - net
+    return jsonify({"ok": True, **f, "net": net, "total": total, "krw": krw, "coin_value": coin_val,
+                    "diff": diff, "pct": diff / net * 100 if net > 0 else None,
+                    "unpriced": [c for c in held if f"KRW-{c}" not in px]})
+
+
 @app.post("/api/backtest")
 def backtest():
     if bt_state["running"]:
