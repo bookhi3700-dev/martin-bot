@@ -31,6 +31,8 @@ button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 button.danger{color:var(--bad)}
 button.small{padding:3px 9px;font-size:12px}
 button:disabled{opacity:.5;cursor:default}
+button.upd{padding:2px 8px;font-size:11px;color:var(--muted)}
+button.upd.new{color:var(--accent);border-color:var(--accent);font-weight:600}
 nav{display:flex;gap:4px;padding:8px 20px 0;max-width:1240px;margin:0 auto}
 nav button{border:none;background:none;color:var(--muted);border-bottom:2px solid transparent;border-radius:0;padding:8px 12px}
 nav button.act{color:var(--ink);border-color:var(--accent);font-weight:600}
@@ -202,6 +204,7 @@ nav .grp.h{--c:var(--home)}
   <span id="runPill" class="pill">Martin 정지</span>
   <span id="gridPill" class="pill">Grid 정지</span>
   <span id="ver" class="hint"></span>
+  <button id="btnUpdate" class="small upd hidden" title="GitHub의 새 버전을 받아 서버에 설치합니다">업데이트</button>
   <span class="spacer"></span>
   <button id="allStart" class="primary allbtn">전체 시작</button>
   <button id="allStop" class="danger">전체 중지</button>
@@ -653,6 +656,48 @@ $('#allStop').onclick = async () => {
   if (!confirm('Martin과 Grid를 모두 중지합니다. Grid가 걸어둔 주문은 취소되고, 보유 코인은 그대로 둡니다. 계속할까요?')) return;
   await api('/api/all/stop', {}); refresh(); gRefresh();
 };
+// ---------------- 서버 업데이트 (작은 버튼) ----------------
+let updChecked = false, updBusy = false;
+async function updCheck(force) {
+  try {
+    const c = await api('/api/update/check' + (force ? '?force=1' : ''));
+    if (!updBusy && c.ok) {
+      const b = $('#btnUpdate');
+      b.classList.toggle('new', c.behind > 0);
+      b.textContent = c.behind > 0 ? `업데이트 (${c.behind})` : '업데이트';
+      b.title = c.behind > 0 ? '새 버전이 있습니다:\n' + c.news.join('\n') : '최신 버전입니다';
+    }
+    return c;
+  } catch (e) { return {ok: false, errors: [String(e)]}; }
+}
+$('#btnUpdate').onclick = async () => {
+  if (updBusy) return;
+  const b = $('#btnUpdate');
+  b.disabled = true; b.textContent = '확인 중…';
+  const c = await updCheck(true);
+  b.disabled = false;
+  if (!c.ok) { alert((c.errors || []).join('\n')); return; }
+  if (!c.behind) { alert('이미 최신 버전입니다.'); return; }
+  const more = c.behind > c.news.length ? `\n· 외 ${c.behind - c.news.length}개` : '';
+  if (!confirm(`새 버전으로 업데이트할까요? (변경 ${c.behind}개)\n\n${c.news.map(x => '· ' + x).join('\n')}${more}\n\n` +
+    '봇이 몇 초 동안 다시 켜집니다. 설정·기록·걸어둔 Grid 주문은 그대로 유지되고, 실행 중이던 봇은 이어서 실행됩니다.')) return;
+  const r = await api('/api/update', {});
+  if (!r.ok) { alert((r.errors || []).join('\n')); return; }
+  updBusy = true; b.disabled = true; b.textContent = '업데이트 중…';
+  const t0 = Date.now();
+  while (Date.now() - t0 < 4 * 60 * 1000) {
+    await new Promise(res => setTimeout(res, 3000));
+    let u;
+    try { u = await (await fetch('/api/update/result')).json(); } catch (e) { continue; }  // 재시작 중에는 응답이 없음
+    if (u.state === 'ok') { alert(`업데이트 완료 ✓  v${u.version} · ${u.commit}`); location.reload(); return; }
+    if (u.state === 'failed') {
+      alert('업데이트 실패. 봇은 이전 버전으로 계속 실행 중일 수 있습니다.\n\n' + u.log.trim().split('\n').slice(-12).join('\n'));
+      break;
+    }
+  }
+  if (Date.now() - t0 >= 4 * 60 * 1000) alert('업데이트 결과를 확인하지 못했습니다. 잠시 후 새로고침해 보세요.');
+  updBusy = false; b.disabled = false; updCheck(true);
+};
 $('#btnLogout').onclick = async () => { await api('/logout', {}); location.href = '/login'; };
 
 // ---------------- 현황 ----------------
@@ -707,7 +752,9 @@ async function refresh() {
   mRunning = s.running; updateAllBtns();
   $('#modePill').textContent = s.mode === 'live' ? '실전' : '모의투자'; $('#modePill').className = 'pill' + (s.mode === 'live' ? ' live' : '');
   $('#exPill').textContent = EXN[s.exchange] || s.exchange;
-  $('#ver').textContent = s.version ? 'v' + s.version : '';
+  $('#ver').textContent = s.version ? 'v' + s.version + (s.commit ? ' · ' + s.commit : '') : '';
+  $('#btnUpdate').classList.toggle('hidden', !s.can_update);
+  if (s.can_update && !updChecked) { updChecked = true; updCheck(); setInterval(updCheck, 30 * 60 * 1000); }
   $('#btnStart').disabled = s.running; $('#btnStop').disabled = !s.running;
   const budgetTxt = t.budget > 0 ? `한도 ${won(t.budget)} 중 ${(t.cost / t.budget * 100).toFixed(0)}%` : '한도 없음';
   H('#totals').innerHTML = [
